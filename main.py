@@ -1,7 +1,9 @@
 import json
 import os
 import uuid
-from datetime import datetime
+import threading
+import time
+from datetime import datetime, timedelta
 
 ENTITY_DIR = "entities"
 COMPONENT_DIR = "components"
@@ -64,7 +66,6 @@ class Component:
             json.dump(self.to_json(), f, indent=4)
 
     def alter_data(self, value):
-        """Update the data value for a specific key."""
         self.data = value
         self.save_to_file()
 
@@ -76,11 +77,12 @@ class Component:
 
 
 class DataTransfer:
-    def __init__(self, source_component=None, target_component=None, data_value=None, operation="replace"):
+    def __init__(self, source_component=None, target_component=None, data_value=None, operation="replace" ,schedule_time=None):
         self.source_component = source_component
         self.target_component = target_component
         self.data_value = data_value  # Unbound data to use if no source_component
         self.operation = operation
+        self.schedule_time = schedule_time
         self.timestamp = datetime.now().isoformat()
 
     def execute(self):
@@ -149,6 +151,7 @@ class DataTransfer:
             "target_component": self.target_component.id if self.target_component else None,
             "data_value": self.data_value,
             "operation": self.operation,
+            "schedule_time": self.schedule_time.isoformat() if self.schedule_time else None,
             "timestamp": self.timestamp
         }
 
@@ -232,6 +235,7 @@ class EntityManager:
 
     def __init__(self):
         self.entities = {}
+        self.scheduled_transfers = []
 
     def create_entity(self, name):
         entity = Entity(name)
@@ -273,29 +277,87 @@ class EntityManager:
         return None
 
 
+manager = EntityManager()
+
+
+def time_tracker():
+    """Thread to keep track of the current time and execute scheduled transfers."""
+    while True:
+        current_time = datetime.now()
+        for transfer in manager.scheduled_transfers[:]:
+            if transfer.schedule_time and current_time >= transfer.schedule_time:
+                print(f"Executing scheduled transfer at {current_time}")
+                transfer.execute()
+                manager.scheduled_transfers.remove(
+                    transfer)  # Remove completed transfer
+        time.sleep(1)  # Check every second
+
+
+def user_interaction():
+    """Thread to periodically ask the user for new data transfers."""
+    while True:
+        for entity in manager.entities.values():
+            print(f"Entity ID: {entity.entity_id}, Name: {entity.name}")
+            for comp_id, component in entity.components.items():
+                print(f"Component ID: {comp_id}, Name: {
+                      component.name}, Data: {component.data}")
+        response = input(
+            "Would you like to create a new data transfer? (yes/no): ").strip().lower()
+        if response == "yes":
+            # Code to prompt user for data transfer details
+            source_id = input("Enter source component ID: ")
+            if source_id == "None":
+                source_component = None
+            target_id = input("Enter target component ID: ")
+            operation = input("Enter operation type: ")
+            data_value = (int)(input("Enter data value: "))
+            delay = int(
+                input("Enter delay (seconds) for this transfer or 0 for immediate execution: "))
+
+            # Assuming we have access to EntityManager instance `manager`
+            if source_id:
+                source_component = manager.get_component(source_id)
+            target_component = manager.get_component(target_id)
+            if target_component:
+                schedule_time = datetime.now() + timedelta(seconds=delay) if delay > 0 else None
+                transfer = DataTransfer(source_component = source_component,data_value=data_value, target_component=target_component,
+                                        operation=operation, schedule_time=schedule_time)
+                if schedule_time:
+                    manager.scheduled_transfers.append(transfer)
+                    print(f"Scheduled transfer at {schedule_time}")
+                else:
+                    transfer.execute()
+        time.sleep(5)  # Wait 5 seconds before asking again
+
+
+def execute_scheduled_transfers():
+    """Thread to execute data transfers based on schedule."""
+    while True:
+        for transfer in manager.scheduled_transfers:
+            if transfer.schedule_time and datetime.now() >= transfer.schedule_time:
+                print(f"Executing scheduled transfer: {transfer}")
+                transfer.execute()
+                # Remove executed transfer
+                manager.scheduled_transfers.remove(transfer)
+        time.sleep(1)  # Check every second
+
+
 # Example usage
 if __name__ == "__main__":
-    manager = EntityManager()
-
-    entity1 = manager.create_entity("notPhilo")
-    entity2 = manager.create_entity("philo")
-    comp1 = entity1.add_component("int")
-    comp2 = entity2.add_component("str")
-    comp3 = entity2.add_component("bool")
-    transaction = DataTransfer(
-        data_value=False, target_component=comp3, operation="toggle")
-    transaction.execute()
-    transaction.save_to_file()
-    transaction = DataTransfer(
-        data_value="hello", target_component=comp1, operation="add")
-    transaction.execute()
-    transaction.save_to_file()
-
-    manager.save_all_entities()
     manager.load_all_entities()
-    loaded_entity1 = manager.get_entity(entity1.entity_id)
-    loaded_entity2 = manager.get_entity(entity2.entity_id)
-    print(f"Loaded entity {loaded_entity1.entity_id} with components: {
-          list(loaded_entity1.components.keys())}")
-    print(f"Loaded entity {loaded_entity2.entity_id} with components: {
-          list(loaded_entity2.components.keys())}")
+
+    time_tracker_thread = threading.Thread(target=time_tracker, daemon=True)
+    user_interaction_thread = threading.Thread(
+        target=user_interaction, daemon=True)
+    execute_thread = threading.Thread(
+        target=execute_scheduled_transfers, daemon=True)
+
+    time_tracker_thread.start()
+    user_interaction_thread.start()
+    execute_thread.start()
+
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        print("Exiting program.")
