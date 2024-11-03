@@ -1,0 +1,9 @@
+{
+    "source_component": "0d3eb1d8-810f-4b6f-9d9c-7adfbd0a2ab5",
+    "target_component": "a3ec5dfc-e677-4ef1-b166-648ec05e3757",
+    "data_key": "x",
+    "data_value": 10,
+    "data_type": "int",
+    "operation": "replace",
+    "timestamp": "2024-11-03T12:12:37.292251"
+}
