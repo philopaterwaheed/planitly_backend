@@ -1,0 +1,8 @@
+{
+    "entity_id": "ed8a14f9-5cd9-4dae-95ce-321aacccf36e",
+    "name": "philo",
+    "components": [
+        "df817110-3c43-445f-8705-b3d90836ff6b",
+        "b76dbd04-2565-498a-8991-37ad36feca27"
+    ]
+}
