@@ -110,20 +110,19 @@ class DataTransfer:
             else:
                 source_value = self.data_value
 
-            if (self.source_component is not None) and (self.source_component.name != self.target_component.name or type(source_value).__name__ != self.target_component.name):
-                print(f"sSource and target components must be of the same type.{
-                    type(self.data_value).__name__}{self.source_component.name}.")
-                return
-            if isinstance(target_data, list):
-                if self.source_component and type(target_data).__name__ != self.source_component.data["type"]:
+            if self.target_component and self.target_component.name.startswith("Array") and isinstance(target_data, list):
+                if self.source_component and self.source_component.name != self.target_component.data["type"]:
                     print(f"Source and target components must be of the same type.{
                           type(self.data_value).__name__}.")
                     return
+            elif (self.source_component is not None) and (self.source_component.name != self.target_component.name or type(source_value).__name__ != self.target_component.name):
+                print(f"sSource and target components must be of the same type.{
+                    type(source_value).__name__}{self.source_component.name}.")
+                return
             if source_value is not None:
                 # Perform operations based on type and specified action
                 if self.operation == "replace":
-                    if self.source_component.name == self.target_component.name:
-                        target_data = source_value
+                    target_data = source_value
                 elif self.operation == "add" and isinstance(source_value, (int, float)) and isinstance(target_data, (int, float)):
                     target_data += source_value
                 elif self.operation == "subtract" and isinstance(source_value, (int, float)) and isinstance(target_data, (int, float)):
@@ -134,17 +133,17 @@ class DataTransfer:
                     target_data -= source_value
                 elif self.operation == "toggle" and isinstance(target_data, bool):
                     target_data = not target_data
-                elif self.operation == "append" and isinstance(target_data, list):
-                    target_data.append(self.data_value)
-                elif self.operation == "remove_back" and isinstance(target_data, list) and target_data and type(target_data).__name__ == self.source_component.data["type"]:
+                elif self.operation == "append" and isinstance(target_data, list) and type(source_value).__name__ == self.target_component.data["type"]:
+                    target_data.append(source_value)
+                elif self.operation == "remove_back" and isinstance(target_data, list):
                     target_data.pop()
-                elif self.operation == "remove_front" and isinstance(target_data, list) and target_data and type(target_data).__name__ == self.source_component.data["type"]:
+                elif self.operation == "remove_front" and isinstance(target_data, list):
                     target_data.pop(0)
-                elif self.operation == "delete_at" and isinstance(target_data, list) and isinstance(self.data_value, int) and 0 <= self.data_value < len(target_data) and type(target_data).__name__ == self.source_component.data["type"]:
-                    target_data.pop(self.data_value)
-                elif self.operation == "push_at" and isinstance(target_data, list) and isinstance(self.data_value, dict) and type(target_data).__name__ == self.source_component.data["type"]:
-                    index = self.data_value.get("index")
-                    item = self.data_value.get("item")
+                elif self.operation == "delete_at" and isinstance(target_data, list) and isinstance(source_value, int) and 0 <= self.source_value < len(target_data) and type(target_data).__name__ == self.source_component.data["type"]:
+                    target_data.pop(source_value)
+                elif self.operation == "push_at" and isinstance(target_data, list) and isinstance(source_value, dict) and type(source_value).__name__ == self.target_component.data["type"]:
+                    index = source_value.get("index")
+                    item = source_value.get("item")
                     if isinstance(index, int) and 0 <= index <= len(target_data):
                         target_data.insert(index, item)
 
@@ -330,6 +329,21 @@ def user_interaction():
                 component_name = input(f"Enter component name (options: {
                                        list(PREDEFINED_COMPONENT_TYPES.keys())}): ").strip()
                 if component_name in PREDEFINED_COMPONENT_TYPES:
+                    if component_name == "Array_type":
+                        # Prompt user to define the type of items for Array_type
+                        array_item_type = input(f"Enter item type for array (options: {
+                                                list(PREDEFINED_COMPONENT_TYPES.keys())}): ").strip()
+                        if array_item_type in PREDEFINED_COMPONENT_TYPES:
+                            data = {"items": [], "type": array_item_type}
+                            component = Component(name="Array_type", data=data)
+                            entity.components[component.id] = component
+                            component.save_to_file()
+                            print(f"Array_type component added with item type '{
+                                  array_item_type}' to entity '{entity.name}'.")
+                        else:
+                            print(f"Invalid item type '{
+                                  array_item_type}' for array.")
+                            continue
                     component = entity.add_component(component_name)
                     entity.save_to_file()
                     print(f"Component '{component_name}' added to entity '{
