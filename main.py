@@ -66,7 +66,12 @@ class Component:
             json.dump(self.to_json(), f, indent=4)
 
     def alter_data(self, value):
-        self.data = value
+        if not (self.name.startswith("Array") and isinstance(value, list)) or (self.name not in ["Array_type", "Array_generic"]):
+            print(value)
+            self.data = value
+        else:
+            print(value)
+            self.data["items"] = value
         self.save_to_file()
 
     @staticmethod
@@ -77,7 +82,7 @@ class Component:
 
 
 class DataTransfer:
-    def __init__(self, source_component=None, target_component=None, data_value=None, operation="replace" ,schedule_time=None):
+    def __init__(self, source_component=None, target_component=None, data_value=None, operation="replace", schedule_time=None):
         self.source_component = source_component
         self.target_component = target_component
         self.data_value = data_value  # Unbound data to use if no source_component
@@ -93,7 +98,10 @@ class DataTransfer:
 
         """Perform the data transfer and apply the operation."""
         if self.target_component:
-            target_data = self.target_component.data
+            if isinstance(self.target_component.data, dict):
+                target_data = self.target_component.data.get("items")
+            else:
+                target_data = self.target_component.data
 
             # Use source component data if available, else use unbound data_value
             source_value = None
@@ -102,12 +110,14 @@ class DataTransfer:
             else:
                 source_value = self.data_value
 
-            if self.source_component and self.source_component.name != self.target_component.name or type(source_value).__name__ != self.target_component.name:
-                print(f"Source and target components must be of the same type.")
+            if (self.source_component is not None) and (self.source_component.name != self.target_component.name or type(source_value).__name__ != self.target_component.name):
+                print(f"sSource and target components must be of the same type.{
+                    type(self.data_value).__name__}{self.source_component.name}.")
                 return
             if isinstance(target_data, list):
                 if self.source_component and type(target_data).__name__ != self.source_component.data["type"]:
-                    print(f"Source and target components must be of the same type.")
+                    print(f"Source and target components must be of the same type.{
+                          type(self.data_value).__name__}.")
                     return
             if source_value is not None:
                 # Perform operations based on type and specified action
@@ -124,7 +134,7 @@ class DataTransfer:
                     target_data -= source_value
                 elif self.operation == "toggle" and isinstance(target_data, bool):
                     target_data = not target_data
-                elif self.operation == "append" and isinstance(target_data, list) and type(target_data).__name__ == self.source_component.data["type"]:
+                elif self.operation == "append" and isinstance(target_data, list):
                     target_data.append(self.data_value)
                 elif self.operation == "remove_back" and isinstance(target_data, list) and target_data and type(target_data).__name__ == self.source_component.data["type"]:
                     target_data.pop()
@@ -208,7 +218,7 @@ class Entity:
 
     @staticmethod
     def from_json(data):
-        entity = Entity(data["entity_id"])
+        entity = Entity(name=data["name"], entity_id=data["entity_id"])
         for comp_id in data["components"]:
             component = Component.load_from_file(comp_id)
             entity.components[comp_id] = component
@@ -294,39 +304,119 @@ def time_tracker():
 
 
 def user_interaction():
-    """Thread to periodically ask the user for new data transfers."""
+    """Thread to periodically ask the user for new actions: create entities, add components, or data transfers."""
     while True:
-        for entity in manager.entities.values():
-            print(f"Entity ID: {entity.entity_id}, Name: {entity.name}")
-            for comp_id, component in entity.components.items():
-                print(f"Component ID: {comp_id}, Name: {
-                      component.name}, Data: {component.data}")
-        response = input(
-            "Would you like to create a new data transfer? (yes/no): ").strip().lower()
-        if response == "yes":
-            # Code to prompt user for data transfer details
-            source_id = input("Enter source component ID: ")
-            if source_id == "None":
-                source_component = None
-            target_id = input("Enter target component ID: ")
-            operation = input("Enter operation type: ")
-            data_value = (int)(input("Enter data value: "))
-            delay = int(
-                input("Enter delay (seconds) for this transfer or 0 for immediate execution: "))
+        print("\nOptions:")
+        print("1. Create a new entity")
+        print("2. Add a component to an entity")
+        print("3. Create a data transfer")
+        print("4. List all entities and components")
+        choice = input("Enter choice (1/2/3/4): ").strip()
 
-            # Assuming we have access to EntityManager instance `manager`
-            if source_id:
-                source_component = manager.get_component(source_id)
+        if choice == "1":
+            # Create a new entity
+            entity_name = input("Enter entity name: ").strip()
+            entity = manager.create_entity(entity_name)
+            entity.save_to_file()
+            print(f"Entity '{entity_name}' created with ID: {
+                  entity.entity_id}")
+
+        elif choice == "2":
+            # Add a component to an entity
+            entity_id = input(
+                "Enter the ID of the entity to add a component to: ").strip()
+            entity = manager.get_entity(entity_id)
+            if entity:
+                component_name = input(f"Enter component name (options: {
+                                       list(PREDEFINED_COMPONENT_TYPES.keys())}): ").strip()
+                if component_name in PREDEFINED_COMPONENT_TYPES:
+                    component = entity.add_component(component_name)
+                    entity.save_to_file()
+                    print(f"Component '{component_name}' added to entity '{
+                          entity.name}'.")
+                else:
+                    print(f"Component type '{component_name}' is not defined.")
+            else:
+                print("Entity not found.")
+
+        elif choice == "3":
+            # Create a data transfer
+            source_id = input(
+                "Enter source component ID (or 'None' if no source): ").strip()
+            target_id = input("Enter target component ID: ").strip()
+            operation = input(
+                "Enter operation type (options: replace, add, subtract, multiply, toggle, append, remove_back, remove_front, delete_at, push_at): ").strip()
+            data_value = input(
+                "Enter data value (leave empty if not applicable): ").strip()
+            delay = int(input(
+                "Enter delay (seconds) for this transfer or 0 for immediate execution: ").strip())
+
+            source_component = manager.get_component(
+                source_id) if source_id.lower() != "none" else None
             target_component = manager.get_component(target_id)
-            if target_component:
+
+            if target_component and operation in ACCEPTED_OPERATIONS.get(target_component.name, []):
+                parsed_value = None
+
+                # Process data_value based on the type of operation and target component
+                if target_component.name.startswith("Array"):
+                    if operation == "delete_at" or operation == "push_at":
+                        # `delete_at` and `push_at` expect a dictionary with index info
+                        try:
+                            parsed_value = json.loads(data_value)
+                            if operation == "push_at" and not isinstance(parsed_value, dict):
+                                raise ValueError(
+                                    "push_at operation expects a dictionary with 'index' and 'item'.")
+                            elif operation == "delete_at" and not isinstance(parsed_value, int):
+                                raise ValueError(
+                                    "delete_at operation expects an integer index.")
+                        except (json.JSONDecodeError, ValueError):
+                            print(f"Invalid data format for operation '{
+                                  operation}' on an array.")
+                            continue
+                    elif operation == "append" and data_value:
+                        # `append` expects a single item to add to the array
+                        try:
+                            parsed_value = json.loads(data_value)
+                        except json.JSONDecodeError:
+                            print("Invalid JSON format for array append data.")
+                            continue
+                else:
+                    # Non-array components
+                    parsed_value = int(
+                        data_value) if data_value.isdigit() else data_value
+
                 schedule_time = datetime.now() + timedelta(seconds=delay) if delay > 0 else None
-                transfer = DataTransfer(source_component = source_component,data_value=data_value, target_component=target_component,
-                                        operation=operation, schedule_time=schedule_time)
+                transfer = DataTransfer(
+                    source_component=source_component,
+                    target_component=target_component,
+                    data_value=parsed_value,
+                    operation=operation,
+                    schedule_time=schedule_time
+                )
+
                 if schedule_time:
                     manager.scheduled_transfers.append(transfer)
-                    print(f"Scheduled transfer at {schedule_time}")
+                    print(f"Scheduled transfer for '{
+                          operation}' at {schedule_time}.")
                 else:
-                    transfer.execute()
+                    success = transfer.execute()
+                    if success:
+                        print(f"Transfer '{operation}' executed immediately.")
+            else:
+                print("Invalid target component or operation type.")
+
+        elif choice == "4":
+            # List all entities and components
+            for entity in manager.entities.values():
+                print(f"\nEntity ID: {entity.entity_id}, Name: {entity.name}")
+                for comp_id, component in entity.components.items():
+                    print(f"  Component ID: {comp_id}, Name: {
+                          component.name}, Data: {component.data}")
+
+        else:
+            print("Invalid choice. Please enter 1, 2, 3, or 4.")
+
         time.sleep(5)  # Wait 5 seconds before asking again
 
 
