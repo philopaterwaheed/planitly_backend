@@ -19,7 +19,7 @@ PREDEFINED_COMPONENT_TYPES = {
     "str": "",
     "bool": True,
     "Array_type": {"items": [], "type": ""},
-    "Array_generic": [],
+    "Array_generic": {"items": []},
     "GraphWidget": {"type": "graph", "data": []},
     "ToggleSwitchWidget": {"type": "toggle", "state": True}
 }
@@ -82,12 +82,13 @@ class Component:
 
 
 class DataTransfer:
-    def __init__(self, source_component=None, target_component=None, data_value=None, operation="replace", schedule_time=None):
+    def __init__(self, source_component=None, target_component=None, data_value=None, operation="replace", details=None, schedule_time=None):
         self.source_component = source_component
         self.target_component = target_component
         self.data_value = data_value  # Unbound data to use if no source_component
         self.operation = operation
         self.schedule_time = schedule_time
+        self.details = {}
         self.timestamp = datetime.now().isoformat()
 
     def execute(self):
@@ -110,7 +111,10 @@ class DataTransfer:
             else:
                 source_value = self.data_value
 
-            if self.target_component and self.target_component.name.startswith("Array") and isinstance(target_data, list):
+            # type checks
+            if self.target_component.name == "Array_generic":
+                None
+            elif self.target_component and self.target_component.name.startswith("Array_type") and isinstance(target_data, list):
                 if self.source_component and self.source_component.name != self.target_component.data["type"]:
                     print(f"Source and target components must be of the same type.{
                           type(self.data_value).__name__}.")
@@ -133,15 +137,15 @@ class DataTransfer:
                     target_data -= source_value
                 elif self.operation == "toggle" and isinstance(target_data, bool):
                     target_data = not target_data
-                elif self.operation == "append" and isinstance(target_data, list) and type(source_value).__name__ == self.target_component.data["type"]:
+                elif self.operation == "append" and isinstance(target_data, list) and (self.target_component.name == "Array_generic" or type(source_value).__name__ == self.target_component.data["type"]):
                     target_data.append(source_value)
                 elif self.operation == "remove_back" and isinstance(target_data, list):
                     target_data.pop()
                 elif self.operation == "remove_front" and isinstance(target_data, list):
                     target_data.pop(0)
-                elif self.operation == "delete_at" and isinstance(target_data, list) and isinstance(source_value, int) and 0 <= self.source_value < len(target_data) and type(target_data).__name__ == self.source_component.data["type"]:
+                elif self.operation == "delete_at" and isinstance(target_data, list) and isinstance(source_value, int) and 0 <= self.source_value < len(target_data):
                     target_data.pop(source_value)
-                elif self.operation == "push_at" and isinstance(target_data, list) and isinstance(source_value, dict) and type(source_value).__name__ == self.target_component.data["type"]:
+                elif self.operation == "push_at" and isinstance(target_data, list) and isinstance(source_value, dict) and (self.target_component.name == "Array_generic" or type(source_value).__name__ == self.target_component.data["type"]):
                     index = source_value.get("index")
                     item = source_value.get("item")
                     if isinstance(index, int) and 0 <= index <= len(target_data):
@@ -161,6 +165,7 @@ class DataTransfer:
             "data_value": self.data_value,
             "operation": self.operation,
             "schedule_time": self.schedule_time.isoformat() if self.schedule_time else None,
+            "details": self.details,
             "timestamp": self.timestamp
         }
 
@@ -174,7 +179,8 @@ class DataTransfer:
             source_component=source_component,
             target_component=target_component,
             data_value=data["data_value"],
-            operation=data["operation"]
+            operation=data["operation"],
+            details=data["details"]
         )
 
     def save_to_file(self):
