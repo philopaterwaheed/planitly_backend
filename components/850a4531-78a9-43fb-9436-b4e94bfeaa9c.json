@@ -3,10 +3,20 @@
     "id": "850a4531-78a9-43fb-9436-b4e94bfeaa9c",
     "data": {
         "items": [
-            55,
-            21
+            {
+                "item": 20,
+                "id": "d8fa76b3-d053-42f2-84f6-ff0ecf3729a1"
+            },
+            {
+                "item": 33,
+                "id": "455407f0-7709-4df9-a63a-54352f4f55f0"
+            },
+            {
+                "item": 99,
+                "id": "7bf0ffbd-1651-434b-be82-d9de197c2825"
+            }
         ],
-        "type": ""
+        "type": "int"
     },
     "host_entity": "aaacf2f3-6869-4712-9549-5459e8352785"
 }

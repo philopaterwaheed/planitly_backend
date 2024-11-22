@@ -21,7 +21,6 @@ PREDEFINED_COMPONENT_TYPES = {
     "Array_type": {"items": [], "type": ""},
     "Array_generic": {"items": []},
     "GraphWidget": {"type": "graph", "data": []},
-    "ToggleSwitchWidget": {"type": "toggle", "state": True}
 }
 ACCEPTED_OPERATIONS = {
 
@@ -113,17 +112,18 @@ class DataTransfer:
 
             # type checks
             if self.target_component.name == "Array_generic":
-                None
+                pass
             elif self.target_component and self.target_component.name.startswith("Array_type") and isinstance(target_data, list):
                 if self.source_component and self.source_component.name != self.target_component.data["type"]:
                     print(f"Source and target components must be of the same type.{
                           type(self.data_value).__name__}.")
                     return
             elif (self.source_component is not None) and (self.source_component.name != self.target_component.name or type(source_value).__name__ != self.target_component.name):
-                print(f"sSource and target components must be of the same type.{
+                print(f"Source and target components must be of the same type.{
                     type(source_value).__name__}{self.source_component.name}.")
                 return
-            if source_value is not None:
+            # by default the remove_front , remove_front don't need source data
+            if source_value is not None or self.operation == "remove_back" or self.operation == "remove_front":
                 # Perform operations based on type and specified action
                 if self.operation == "replace":
                     target_data = source_value
@@ -138,19 +138,26 @@ class DataTransfer:
                 elif self.operation == "toggle" and isinstance(target_data, bool):
                     target_data = not target_data
                 elif self.operation == "append" and isinstance(target_data, list) and (self.target_component.name == "Array_generic" or type(source_value).__name__ == self.target_component.data["type"]):
-                    target_data.append(source_value)
-                elif self.operation == "remove_back" and isinstance(target_data, list):
-                    target_data.pop()
-                elif self.operation == "remove_front" and isinstance(target_data, list):
-                    target_data.pop(0)
-                elif self.operation == "delete_at" and isinstance(target_data, list) and isinstance(source_value, int) and 0 <= self.source_value < len(target_data):
-                    target_data.pop(source_value)
+                    target_data.append(
+                        {"item": source_value, "id": str(uuid.uuid4())})
+                elif self.operation == "remove_back" and isinstance(target_data, list) and len(target_data) >= 0:
+                    removed = target_data.pop()
+                    if (isinstance(removed, dict)):
+                        self.details["removed"] = removed
+                elif self.operation == "remove_front" and isinstance(target_data, list) and len(target_data) >= 0:
+                    removed = target_data.pop(0)
+                    if (isinstance(removed, dict)):
+                        self.details["removed"] = removed
+                elif self.operation == "delete_at" and isinstance(target_data, list) and isinstance(source_value, int) and 0 <= source_value < len(target_data):
+                    removed = target_data.pop(source_value)
+                    if (isinstance(removed, dict)):
+                        self.details["removed"] = removed
                 elif self.operation == "push_at" and isinstance(target_data, list) and isinstance(source_value, dict) and (self.target_component.name == "Array_generic" or type(source_value).__name__ == self.target_component.data["type"]):
                     index = source_value.get("index")
                     item = source_value.get("item")
                     if isinstance(index, int) and 0 <= index <= len(target_data):
-                        target_data.insert(index, item)
-
+                        target_data.insert(
+                            index, {"item": source_value, "id": str(uuid.uuid4())})
                 self.target_component.alter_data(target_data)
                 return True
             else:
