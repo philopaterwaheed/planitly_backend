@@ -23,7 +23,7 @@ Planity Backend provides RESTful API endpoints to manage **subjects**, **compone
 
 ---
 
-## 📚 Subjects API
+## Subjects API
 
 ###  Create a Subject
 
