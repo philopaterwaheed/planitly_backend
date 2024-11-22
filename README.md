@@ -14,12 +14,12 @@ Planity Backend provides RESTful API endpoints to manage **subjects**, **compone
 
 ## Table of Contents
 
-- ## Subjects API
-- ## Components API
-- ## Data Transfers API
-- ## Project Structure
-- ## Requirements
-- ## How to Run
+- **Subjects API**
+- **Components API**
+- **Data Transfers API**
+- **Project Structure**
+- **Requirements**
+- **How to Run**
 ---
 
 ## Subjects API
