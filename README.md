@@ -180,7 +180,7 @@ Response:
 ```
 ## Project Structure
 
-- **app.py**: Main application file.
+- **api.py**: Main application file.
 - **models/**: Data models for subjects, components, and data transfers.
 - **routes/**: API route handlers.
 - **tests/**: Unit tests for backend APIs.
