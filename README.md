@@ -14,13 +14,12 @@ Planity Backend provides RESTful API endpoints to manage **subjects**, **compone
 
 ## 📋 Table of Contents
 
-- [Subjects API](#subjects-api)
-- [Components API](#components-api)
-- [Data Transfers API](#data-transfers-api)
-- [Project Structure](#-project-structure)
-- [Requirements](#-requirements)
-- [How to Run](#-how-to-run)
-- [License](#-license)
+- [Subjects API]
+- [Components API]
+- [Data Transfers API]
+- [Project Structure]
+- [Requirements]
+- [How to Run]
 
 ---
 
@@ -194,8 +193,6 @@ Response:
 - MongoDB
 
 ##  How to Run
-
-1. Clone the repository:
 
    ```bash
    git clone https://github.com/your-username/planity_backend.git
