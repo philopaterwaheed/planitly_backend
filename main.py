@@ -33,8 +33,9 @@ ACCEPTED_OPERATIONS = {
 
 
 class Component:
-    def __init__(self, name, data=None, id=None, host_entity=None):
+    def __init__(self, name, comp_type, data=None, id=None, host_entity=None):
         self.name = name
+        self.comp_type = comp_type
         self.data = data or PREDEFINED_COMPONENT_TYPES.get(name, {})
         self.id = id or str(uuid.uuid4())
         self.host_entity = host_entity
@@ -47,6 +48,7 @@ class Component:
         return {
             "name": self.name,
             "id": self.id,
+            "type": self.comp_type,
             "data": self.data,
             "host_entity": self.host_entity
         }
@@ -57,6 +59,7 @@ class Component:
             name=data["name"],
             data=data["data"],
             id=data["id"],
+            comp_type=data["type"],
             host_entity=data["host_entity"]
         )
 
@@ -91,9 +94,9 @@ class DataTransfer:
         self.timestamp = datetime.now().isoformat()
 
     def execute(self):
-        if self.operation not in ACCEPTED_OPERATIONS[self.target_component.name]:
+        if self.operation not in ACCEPTED_OPERATIONS[self.target_component.comp_type]:
             print(f"Operation '{self.operation}' not supported for component type '{
-                  self.tatget_component.name}'.")
+                  self.tatget_component.comp_type}'.")
             return
 
         """Perform the data transfer and apply the operation."""
@@ -111,16 +114,16 @@ class DataTransfer:
                 source_value = self.data_value
 
             # type checks
-            if self.target_component.name == "Array_generic":
+            if self.target_component.comp_type == "Array_generic":
                 pass
-            elif self.target_component and self.target_component.name.startswith("Array_type") and isinstance(target_data, list):
-                if self.source_component and self.source_component.name != self.target_component.data["type"]:
+            elif self.target_component and self.target_component.comp_type.startswith("Array_type") and isinstance(target_data, list):
+                if self.source_component and self.source_component.comp_type != self.target_component.data["type"]:
                     print(f"Source and target components must be of the same type.{
                           type(self.data_value).__name__}.")
                     return
-            elif (self.source_component is not None) and (self.source_component.name != self.target_component.name or type(source_value).__name__ != self.target_component.name):
+            elif (self.source_component is not None) and (self.source_component.comp_type != self.target_component.comp_type or type(source_value).__name__ != self.target_component.comp_type):
                 print(f"Source and target components must be of the same type.{
-                    type(source_value).__name__}{self.source_component.name}.")
+                    type(source_value).__name__}{self.source_component.comp_type}.")
                 return
             # by default the remove_front , remove_front don't need source data
             if source_value is not None or self.operation == "remove_back" or self.operation == "remove_front":
@@ -137,7 +140,7 @@ class DataTransfer:
                     target_data -= source_value
                 elif self.operation == "toggle" and isinstance(target_data, bool):
                     target_data = not target_data
-                elif self.operation == "append" and isinstance(target_data, list) and (self.target_component.name == "Array_generic" or type(source_value).__name__ == self.target_component.data["type"]):
+                elif self.operation == "append" and isinstance(target_data, list) and (self.target_component.comp_type == "Array_generic" or type(source_value).__name__ == self.target_component.data["type"]):
                     target_data.append(
                         {"item": source_value, "id": str(uuid.uuid4())})
                 elif self.operation == "remove_back" and isinstance(target_data, list) and len(target_data) >= 0:
@@ -152,7 +155,7 @@ class DataTransfer:
                     removed = target_data.pop(source_value)
                     if (isinstance(removed, dict)):
                         self.details["removed"] = removed
-                elif self.operation == "push_at" and isinstance(target_data, list) and isinstance(source_value, dict) and (self.target_component.name == "Array_generic" or type(source_value).__name__ == self.target_component.data["type"]):
+                elif self.operation == "push_at" and isinstance(target_data, list) and isinstance(source_value, dict) and (self.target_component.comp_type == "Array_generic" or type(source_value).__name__ == self.target_component.data["type"]):
                     index = source_value.get("index")
                     item = source_value.get("item")
                     if isinstance(index, int) and 0 <= index <= len(target_data):
@@ -208,14 +211,15 @@ class Entity:
         self.name = name
         self.components = {}
 
-    def add_component(self, component_name):
-        if component_name in PREDEFINED_COMPONENT_TYPES:
-            component = Component(name=component_name)
+    def add_component(self, component_name,  component_type):
+        if component_type in PREDEFINED_COMPONENT_TYPES:
+            component = Component(name=component_name,
+                                  comp_type=component_type)
             component.host_entity = self.entity_id
             self.components[component.id] = component
             component.save_to_file()
         else:
-            print(f"Component type '{component_name}' is not defined.")
+            print(f"Component type '{component_type}' is not defined.")
         return component
 
     def get_component(self, comp_id):
@@ -339,16 +343,18 @@ def user_interaction():
                 "Enter the ID of the entity to add a component to: ").strip()
             entity = manager.get_entity(entity_id)
             if entity:
-                component_name = input(f"Enter component name (options: {
-                                       list(PREDEFINED_COMPONENT_TYPES.keys())}): ").strip()
-                if component_name in PREDEFINED_COMPONENT_TYPES:
-                    if component_name == "Array_type":
+                component_name = input("Enter component name ")
+                component_type = input(f"Enter component type (options: {
+                    list(PREDEFINED_COMPONENT_TYPES.keys())}): ").strip()
+                if component_type in PREDEFINED_COMPONENT_TYPES:
+                    if component_type == "Array_type":
                         # Prompt user to define the type of items for Array_type
                         array_item_type = input(f"Enter item type for array (options: {
-                                                list(PREDEFINED_COMPONENT_TYPES.keys())}): ").strip()
+                            list(PREDEFINED_COMPONENT_TYPES.keys())}): ").strip()
                         if array_item_type in PREDEFINED_COMPONENT_TYPES:
                             data = {"items": [], "type": array_item_type}
-                            component = Component(name="Array_type", data=data)
+                            component = Component(
+                                name=component_name, comp_type="Array_type", data=data)
                             entity.components[component.id] = component
                             component.save_to_file()
                             print(f"Array_type component added with item type '{
@@ -357,12 +363,13 @@ def user_interaction():
                             print(f"Invalid item type '{
                                   array_item_type}' for array.")
                             continue
-                    component = entity.add_component(component_name)
+                    component = entity.add_component(
+                        component_name, component_type)
                     entity.save_to_file()
-                    print(f"Component '{component_name}' added to entity '{
+                    print(f"Component '{component_type}' added to entity '{
                           entity.name}'.")
                 else:
-                    print(f"Component type '{component_name}' is not defined.")
+                    print(f"Component type '{component_type}' is not defined.")
             else:
                 print("Entity not found.")
 
@@ -382,11 +389,11 @@ def user_interaction():
                 source_id) if source_id.lower() != "none" else None
             target_component = manager.get_component(target_id)
 
-            if target_component and operation in ACCEPTED_OPERATIONS.get(target_component.name, []):
+            if target_component and operation in ACCEPTED_OPERATIONS.get(target_component.comp_type, []):
                 parsed_value = None
 
                 # Process data_value based on the type of operation and target component
-                if target_component.name.startswith("Array"):
+                if target_component.comp_type.startswith("Array"):
                     if operation == "delete_at" or operation == "push_at":
                         # `delete_at` and `push_at` expect a dictionary with index info
                         try:
@@ -438,8 +445,8 @@ def user_interaction():
             for entity in manager.entities.values():
                 print(f"\nEntity ID: {entity.entity_id}, Name: {entity.name}")
                 for comp_id, component in entity.components.items():
-                    print(f"  Component ID: {comp_id}, Name: {
-                          component.name}, Data: {component.data}")
+                    print(f"  Component ID: {comp_id}, Name: {component.name}, Type: {
+                          component.comp_type}, Data: {component.data}")
 
         else:
             print("Invalid choice. Please enter 1, 2, 3, or 4.")
