@@ -194,8 +194,8 @@ Response:
 ##  How to Run
 
    ```bash
-   git clone https://github.com/your-username/planity_backend.git
-   cd planity_backend
+   git clone https://github.com/your-username/planitly_backend.git
+   cd planitly_backend
    pip install -r requirements.txt
    python app.py
 ```
