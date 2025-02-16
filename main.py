@@ -3,46 +3,52 @@ import uuid
 import threading
 import time
 from datetime import datetime, timedelta
-from flask import Flask, request, jsonify
-from mongoengine import connect, Document, StringField, ListField, ReferenceField, DateTimeField, DictField, NULLIFY
-from mongoengine.errors import DoesNotExist, ValidationError
+from flask import Flask, request, jsonify, session
+from mongoengine import connect, Document, StringField, ListField, ReferenceField, DateTimeField, DictField, NULLIFY # type: ignore
+from mongoengine.errors import DoesNotExist, ValidationError # type: ignore
 from bson import json_util
-from pytz import UTC
-
+from pytz import UTC # type: ignore
+from functools import wraps
 
 app = Flask(__name__)
 connect(db="planitly", host="localhost", port=27017)
 
+# Authentication Middleware
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user_id' not in session:
+            return jsonify({"error": "Authentication required"}), 401
+        return f(*args, **kwargs)
+    return decorated_function
 
+# Database Models
 class Component_db(Document):
     id = StringField(primary_key=True)
     name = StringField(required=True)
     host_subject = StringField(required=True)
     data = DictField()
     comp_type = StringField(required=True)
+    owner = StringField(required=True)  # Store user ID
     meta = {'collection': 'components'}
-
 
 class Subject_db(Document):
     id = StringField(primary_key=True)
     name = StringField(required=True)
-    components = ListField(ReferenceField(
-        Component_db, reverse_delete_rule=NULLIFY))
+    components = ListField(ReferenceField(Component_db, reverse_delete_rule=NULLIFY))
+    owner = StringField(required=True)  # Store user ID
     meta = {'collection': 'subjects'}
-
 
 class DataTransfer_db(Document):
     id = StringField(primary_key=True)
-    source_component = ReferenceField(
-        Component_db, reverse_delete_rule=NULLIFY, required=False)
-    target_component = ReferenceField(
-        Component_db, reverse_delete_rule=NULLIFY, required=True)
+    source_component = ReferenceField(Component_db, reverse_delete_rule=NULLIFY, required=False)
+    target_component = ReferenceField(Component_db, reverse_delete_rule=NULLIFY, required=True)
     data_value = DictField(null=True)
     operation = StringField(required=True)
     schedule_time = DateTimeField()
     details = DictField(null=True)
+    owner = StringField(required=True)  # Store user ID
     meta = {'collection': 'data_transfers'}
-
 
 # Predefined data and widget types
 PREDEFINED_COMPONENT_TYPES = {
@@ -64,12 +70,13 @@ ACCEPTED_OPERATIONS = {
 
 
 class Component:
-    def __init__(self, name, comp_type, data=None, id=None, host_subject=None):
+    def __init__(self, name, comp_type, data=None, id=None, host_subject=None, owner = None):
         self.name = name
         self.comp_type = comp_type
         self.data = data or PREDEFINED_COMPONENT_TYPES.get(name, {})
         self.id = id or str(uuid.uuid4())
         self.host_subject = host_subject
+        self.owner = owner
 
     def is_widget(self):
         """Check if the component is a widget based on predefined types."""
@@ -81,7 +88,8 @@ class Component:
             "id": self.id,
             "type": self.comp_type,
             "data": self.data,
-            "host_subject": self.host_subject
+            "host_subject": self.host_subject,
+            "owner": self.owner
         }
 
     @staticmethod
@@ -91,7 +99,8 @@ class Component:
             data=data["data"],
             id=data["id"],
             comp_type=data["type"],
-            host_subject=data["host_subject"]
+            host_subject=data["host_subject"],
+            owner=data.get("owner")
         )
 
     def save_to_db(self):
@@ -100,7 +109,8 @@ class Component:
             name=self.name,
             hostSubject=self.host_subject,
             data=self.data,
-            comp_type=self.comp_type
+            comp_type=self.comp_type,
+            owner=self.owner
         )
         component_db.save()
 
@@ -131,154 +141,104 @@ class Component:
                 "id": component_db.id,
                 "data": component_db.data,
                 "type": component_db.comp_type,
-                "host_subject": component_db.host_subject
+                "host_subject": component_db.host_subject,
+                "owner": component_db.owner
             })
         return None
 
 
 class DataTransfer:
-    def __init__(self, id=None,  source_component=None, target_component=None, data_value=None, operation="replace", details=None, schedule_time=None):
-        self.id = id
+    def __init__(self, id=None, source_component=None, target_component=None, data_value=None, operation="replace", details=None, schedule_time=None):
+        self.id = id or str(uuid.uuid4())
         self.source_component = source_component
         self.target_component = target_component
-        self.data_value = data_value  # Unbound data to use if no source_component
+        self.data_value = data_value
         self.operation = operation
         self.schedule_time = schedule_time
-        self.details = {}
+        self.details = details or {}
         self.timestamp = datetime.now(UTC).isoformat()
 
     def execute(self):
-        source_component = target_component = None
-        if self.source_component:
-            source_component = Component_db.objects(
-                id=self.source_component).first()
-        if self.target_component:
-            target_component = Component_db.objects(
-                id=self.target_component).first()
+        source_component = Component_db.objects(id=self.source_component).first() if self.source_component else None
+        target_component = Component_db.objects(id=self.target_component).first()
 
-        if self.operation not in ACCEPTED_OPERATIONS[target_component.comp_type]:
-            print(f"Operation '{self.operation}' not supported for component type '{
-                  target_component.comp_type}'.")
-            return
+        if not target_component or self.operation not in ACCEPTED_OPERATIONS.get(target_component.comp_type, []):
+            print(f"Operation '{self.operation}' not supported for component type '{target_component.comp_type}'")
+            return False
 
-        """Perform the data transfer and apply the operation."""
-        if target_component:
-            if isinstance(target_component.data, dict) and "items" in target_component.data:
-                target_data = target_component.data.get("items")
-            elif "item" in target_component.data:
-                target_data = target_component.data
+        target_data = target_component.data.get("items") if isinstance(target_component.data, dict) and "items" in target_component.data else target_component.data.get("item")
+        source_value = source_component.data if source_component else self.data_value
+        if isinstance(source_value, dict) and len(source_value) == 1:
+            source_value = list(source_value.values())[0]
+        if isinstance(target_data, dict) and len(target_data) == 1:
+            target_data = list(target_data.values())[0]
 
-            # Use source component data if available, else use unbound data_value
-            source_value = None
-            if source_component:
-                source_value = source_component.data
-            else:
-                source_value = self.data_value
-            if isinstance(source_value, dict) and len(source_value) == 1:
-                source_value = list(source_value.values())[0]
-            if isinstance(target_data, dict) and len(target_data) == 1:
-                target_data = list(target_data.values())[0]
-            # type checks
-            if target_component.comp_type == "Array_generic":
-                pass
-            elif target_component and target_component.comp_type.startswith("Array_type") and isinstance(target_data, list):
-                if source_component and source_component.comp_type != target_component.data["type"]:
-                    print(f"Source and target components must be of the same type.{
-                          type(self.data_value).__name__}.")
-                    return
-            elif (source_component is not None) and (source_component.comp_type != target_component.comp_type or type(source_value).__name__ != target_component.comp_type):
-                print(f"Source and target components must be of the same type.{
-                    type(source_value).__name__}{source_component.comp_type}.")
-                return
-            # by default the remove_front , remove_front don't need source data
-            if source_value is not None or self.operation == "remove_back" or self.operation == "remove_front":
-                print(source_value)
-                print(target_data)
-                # Perform operations based on type and specified action
-                if self.operation == "replace":
-                    target_data = source_value
-                elif self.operation == "add" and isinstance(source_value, (int, float)) and isinstance(target_data, (int, float)):
-                    target_data += source_value
-                elif self.operation == "subtract" and isinstance(source_value, (int, float)) and isinstance(target_data, (int, float)):
-                    target_data -= source_value
-                elif self.operation == "multiply" and isinstance(source_value, (int, float)) and isinstance(target_data, (int, float)):
-                    target_data *= source_value
-                elif self.operation == "subtract" and isinstance(source_value, (int, float)) and isinstance(target_data, (int, float)):
-                    target_data -= source_value
-                elif self.operation == "toggle" and isinstance(target_data, bool):
-                    target_data = not target_data
-                elif self.operation == "append" and isinstance(target_data, list) and (target_component.comp_type == "Array_generic" or type(source_value).__name__ == target_component.data["type"]):
-                    target_data.append(
-                        {"item": source_value, "id": str(uuid.uuid4())})
-                elif self.operation == "remove_back" and isinstance(target_data, list) and len(target_data) >= 0:
-                    removed = target_data.pop()
-                    if (isinstance(removed, dict)):
-                        self.details["removed"] = removed
-                elif self.operation == "remove_front" and isinstance(target_data, list) and len(target_data) >= 0:
-                    removed = target_data.pop(0)
-                    if (isinstance(removed, dict)):
-                        self.details["removed"] = removed
-                elif self.operation == "delete_at" and isinstance(target_data, list) and isinstance(self.data_value, dict) and "index" in self.data_value and (target_component.comp_type == "Array_generic" or type(target_data["item"]).__name__ == target_component.data["type"]):
-                    print(f"target_data index : {target_data}")
-                    index = self.data_value.get("index")
-                    removed = None
-                    if isinstance(index, int) and 0 <= index <= len(target_data):
-                        removed = target_data.pop(int(index))
-                    if (isinstance(removed, dict)):
-                        self.details["removed"] = removed
-                elif self.operation == "push_at" and isinstance(target_data, list) and isinstance(self.data_value, dict) and "index" in self.data_value and (target_component.comp_type == "Array_generic" or type(source_value["item"]).__name__ == target_component.data["type"]):
-                    index = self.data_value.get("index")
-                    item = source_value.get("item")
-                    if isinstance(index, int) and 0 <= index <= len(target_data):
-                        target_data.insert(
-                            index, {"item": source_value["item"], "id": str(uuid.uuid4())})
-                else:
-                    return False
-                if not (target_component.comp_type.startswith("Array") and isinstance(target_data, list)) or (target_component.comp_type not in ["Array_type", "Array_generic"]):
-                    target_component.data["item"] = target_data
-                else:
-                    target_component.data["items"] = target_data
-                target_component.save()
-                self.details["done"] = True
-                return True
-            else:
-                print(f"Source data not available for operation '{
-                      self.operation}'.")
-                return False
+        if self.operation == "replace":
+            target_data = source_value
+        elif self.operation == "add" and isinstance(target_data, (int, float)):
+            target_data += source_value
+        elif self.operation == "subtract" and isinstance(target_data, (int, float)):
+            target_data -= source_value
+        elif self.operation == "multiply" and isinstance(target_data, (int, float)):
+            target_data *= source_value
+        elif self.operation == "toggle" and isinstance(target_data, bool):
+            target_data = not target_data
+        elif self.operation in ["append", "remove_back", "remove_front", "delete_at", "push_at"] and isinstance(target_data, list):
+            if self.operation == "append":
+                target_data.append({"item": source_value, "id": str(uuid.uuid4())})
+            elif self.operation == "remove_back" and target_data:
+                self.details["removed"] = target_data.pop()
+            elif self.operation == "remove_front" and target_data:
+                self.details["removed"] = target_data.pop(0)
+            elif self.operation == "delete_at" and isinstance(self.data_value, dict) and "index" in self.data_value:
+                index = self.data_value["index"]
+                if isinstance(index, int) and 0 <= index < len(target_data):
+                    self.details["removed"] = target_data.pop(index)
+            elif self.operation == "push_at" and isinstance(self.data_value, dict) and "index" in self.data_value:
+                index = self.data_value["index"]
+                if isinstance(index, int) and 0 <= index <= len(target_data):
+                    target_data.insert(index, {"item": source_value, "id": str(uuid.uuid4())})
+        else:
+            return False
+
+        if isinstance(target_component.data, dict) and "items" in target_component.data:
+            target_component.data["items"] = target_data
+        else:
+            target_component.data["item"] = target_data
+        
+        target_component.save()
+        self.details["done"] = True
+        return True
 
     def to_json(self):
         return {
             "id": self.id,
-            "source_component": self.source_component.id if self.source_component else None,
-            "target_component": self.target_component.id if self.target_component else None,
+            "source_component": self.source_component,
+            "target_component": self.target_component,
             "data_value": self.data_value,
             "operation": self.operation,
             "schedule_time": self.schedule_time.isoformat() if self.schedule_time else None,
             "details": self.details,
             "timestamp": self.timestamp
         }
-
+    
     @staticmethod
-    def from_json(data, subject_manager):
-        id = data.get('id', None)
-        source_component = subject_manager.get_component(
-            data["source_component"]) if data["source_component"] else None
-        target_component = subject_manager.get_component(
-            data["target_component"]) if data["target_component"] else None
+    def from_json(data):
         return DataTransfer(
-            id=id,
-            source_component=source_component,
-            target_component=target_component,
-            data_value=data["data_value"],
-            operation=data["operation"],
-            details=data["details"]
+            id=data.get("id"),
+            source_component=data.get("source_component"),
+            target_component=data.get("target_component"),
+            data_value=data.get("data_value"),
+            operation=data.get("operation"),
+            details=data.get("details"),
+            schedule_time=datetime.fromisoformat(data["schedule_time"]) if data.get("schedule_time") else None
         )
 
     def save_to_db(self):
         data_transfer_db = DataTransfer_db(
-            id=self.id or str(uuid.uuid4()),
-            source_component=self.source_component.id if self.source_component else None,
-            target_component=self.target_component.id if self.target_component else None,
+            id=self.id,
+            source_component=self.source_component,
+            target_component=self.target_component,
             data_value=self.data_value,
             operation=self.operation,
             schedule_time=self.schedule_time,
@@ -287,25 +247,19 @@ class DataTransfer:
         data_transfer_db.save()
 
     @staticmethod
-    def load_from_db(transfer_id, subject_manager):
+    def load_from_db(transfer_id):
         data_transfer_db = DataTransfer_db.objects(id=transfer_id).first()
         if data_transfer_db:
-            id = data_transfer_db.id
-            source_component = subject_manager.get_component(
-                data_transfer_db.source_component) if data_transfer_db.source_component else None
-            target_component = subject_manager.get_component(
-                data_transfer_db.target_source)
             return DataTransfer(
-                id=id,
-                source_component=source_component,
-                target_component=target_component,
+                id=data_transfer_db.id,
+                source_component=data_transfer_db.source_component,
+                target_component=data_transfer_db.target_component,
                 data_value=data_transfer_db.data_value,
                 operation=data_transfer_db.operation,
                 details=data_transfer_db.details,
                 schedule_time=data_transfer_db.schedule_time
             )
         return None
-
 
 class Subject:
     def __init__(self, name, id=None):
@@ -378,8 +332,10 @@ class SubjectManager:
         return cls._instance
 
     def __init__(self):
-        self.subjects = {}
-        self.scheduled_transfers = []
+        if not hasattr(self, 'subjects'):
+            self.subjects = {}
+        if not hasattr(self, 'scheduled_transfers'):
+            self.scheduled_transfers = []
 
     def create_subject(self, name):
         subject = Subject(name)
@@ -390,9 +346,7 @@ class SubjectManager:
         return self.subjects.get(id)
 
     def get_subject_by_name(self, name):
-        for subject in self.subjects.values():
-            if subject.name == name:
-                return subject
+        return next((subject for subject in self.subjects.values() if subject.name == name), None)
 
     def save_all_subjects(self):
         for subject in self.subjects.values():
@@ -412,9 +366,7 @@ class SubjectManager:
             if subject:
                 self.subjects[subject.id] = subject
 
-
 manager = SubjectManager()
-
 
 def time_tracker():
     """Thread to keep track of the current time and execute scheduled transfers."""
@@ -424,93 +376,90 @@ def time_tracker():
             if transfer.schedule_time and current_time >= transfer.schedule_time:
                 print(f"Executing scheduled transfer at {current_time}")
                 transfer.execute()
-                manager.scheduled_transfers.remove(
-                    transfer)  # Remove completed transfer
+                manager.scheduled_transfers.remove(transfer)  # Remove completed transfer
         time.sleep(1)  # Check every second
-
 
 def execute_scheduled_transfers():
     """Thread to execute data transfers based on schedule."""
     while True:
-        for transfer in manager.scheduled_transfers:
-            if transfer.schedule_time and datetime.now(UTC) >= transfer.schedule_time:
-                print(f"Executing scheduled transfer: {transfer}")
-                transfer.execute()
-                # Remove executed transfer
-                manager.scheduled_transfers.remove(transfer)
+        current_time = datetime.now(UTC)
+        pending_transfers = [t for t in manager.scheduled_transfers if t.schedule_time and current_time >= t.schedule_time]
+        for transfer in pending_transfers:
+            print(f"Executing scheduled transfer: {transfer}")
+            transfer.execute()
+            manager.scheduled_transfers.remove(transfer)  # Remove executed transfer
         time.sleep(1)  # Check every second
-
 
 # [done]
 @app.route('/components', methods=['POST'])
+@login_required
 def create_component():
     data = request.json
-    if 'id' in data:
-        existing_component = Component_db.objects(id=data['id']).first()
-        if existing_component:
-            return jsonify({"message": "Component with this ID already exists", "id": str(existing_component.id)}), 400
-
+    if 'id' in data and Component_db.objects(id=data['id']).first():
+        return jsonify({"message": "Component with this ID already exists"}), 400
+    
     if 'host_subject' not in data:
         return jsonify({"message": "Host subject is required"}), 400
-    host_subject_id = data['host_subject']
-    host_subject = Subject_db.objects(id=host_subject_id).first()
+    
+    host_subject = Subject_db.objects(id=data['host_subject']).first()
     if not host_subject:
         return jsonify({"message": "Host subject not found"}), 404
+    
     if 'comp_type' not in data:
         return jsonify({"message": "Component type is required"}), 400
+    
     component = Component_db(**data)
     component.save()
     return jsonify({"message": "Component created", "id": str(component.id)}), 201
 
-
-# [done]
 @app.route('/subjects', methods=['POST'])
+@login_required
 def create_subject():
     data = request.json
-    if 'id' in data:
-        existing_subject = Subject_db.objects(id=data['id']).first()
-        if existing_subject:
-            return jsonify({"message": "Subject with this ID already exists", "id": str(existing_subject.id)}), 400
-    components = []
-    if 'components' in data:
-        component_ids = data.pop('components', [])
-        components = Component_db.objects.filter(id__in=component_ids)
-
+    if 'id' in data and Subject_db.objects(id=data['id']).first():
+        return jsonify({"message": "Subject with this ID already exists"}), 400
+    
+    component_ids = data.pop('components', []) if 'components' in data else []
+    components = Component_db.objects.filter(id__in=component_ids)
+    
     subject = Subject_db(**data, components=components)
     subject.save()
     return jsonify({"message": "Subject created", "id": str(subject.id)}), 201
 
-
 @app.route('/data_transfers', methods=['POST'])
+@login_required
 def create_data_transfer():
     try:
         data = request.json
-        data_id = data.get('id', None)
-        source_component = data['source_component']
-        target_component = data['target_component']
+        data_id = data.get('id', str(uuid.uuid4()))
+        source_component = Component_db.objects(id=data.get('source_component')).first()
+        target_component = Component_db.objects(id=data.get('target_component')).first()
+        
+        if not target_component:
+            return jsonify({"error": "Target component not found"}), 404
+        
         schedule_time = None
         if 'schedule_time' in data and data['schedule_time']:
             try:
-                schedule_time = datetime.fromisoformat(
-                    data['schedule_time'].replace("Z", "+00:00"))
+                schedule_time = datetime.fromisoformat(data['schedule_time'].replace("Z", "+00:00"))
             except ValueError:
                 return jsonify({"error": "Invalid date format for 'schedule_time'"}), 400
+        
         data_transfer = DataTransfer(
             id=data_id,
             source_component=source_component,
             target_component=target_component,
-            data_value=data["data_value"],
-            operation=data['operation'],
+            data_value=data.get("data_value"),
+            operation=data.get("operation"),
             schedule_time=schedule_time,
-            details=data.get('details')
+            details=data.get("details")
         )
+        
         if schedule_time and datetime.now(UTC) >= schedule_time:
-            print("entered")
-            success = data_transfer.execute()
-            if success:
+            if data_transfer.execute():
                 return jsonify({"message": "Data transfer executed immediately", "id": str(data_transfer.id)}), 200
-            else:
-                return jsonify({"error": "Failed to execute data transfer"}), 500
+            return jsonify({"error": "Failed to execute data transfer"}), 500
+        
         data_transfer.save_to_db()
         return jsonify({"message": "Data transfer created", "id": str(data_transfer.id)}), 201
     except DoesNotExist as e:
@@ -520,9 +469,8 @@ def create_data_transfer():
     except Exception as e:
         return jsonify({"error": f"An unexpected error occurred: {str(e)}"}), 500
 
-
-# [done]
 @app.route('/subjects/<subject_id>', methods=['GET'])
+@login_required
 def get_subject(subject_id):
     try:
         subject = Subject_db.objects.get(id=subject_id)
@@ -530,56 +478,52 @@ def get_subject(subject_id):
     except DoesNotExist:
         return jsonify({"error": "Subject not found"}), 404
 
-
-# [done]
 @app.route('/components/<component_id>', methods=['GET'])
+@login_required
 def get_component_by_id(component_id):
     try:
         component = Component_db.objects.get(id=component_id)
         return jsonify(component.to_mongo().to_dict()), 200
-    except Component_db.DoesNotExist:
+    except DoesNotExist:
         return jsonify({"error": "Component not found"}), 404
-
+    
 
 @app.route('/data_transfers/<transfer_id>', methods=['GET'])
+@login_required
 def get_data_transfer(transfer_id):
     try:
         data_transfer = DataTransfer_db.objects.get(id=transfer_id)
         return jsonify(data_transfer.to_mongo().to_dict()), 200
-    except DataTransfer.DoesNotExist:
+    except DoesNotExist:
         return jsonify({"error": "Data transfer not found"}), 404
     except Exception as e:
         return jsonify({"error": f"An unexpected error occurred: {str(e)}"}), 500
 
-
-# [done]
 @app.route('/components', methods=['GET'])
+@login_required
 def get_all_components():
     components = Component_db.objects()
     return json.dumps([comp.to_mongo() for comp in components], default=json_util.default), 200
 
-
-# [done]
 @app.route('/subjects', methods=['GET'])
+@login_required
 def get_all_subjects():
     subjects = Subject_db.objects()
     return json.dumps([subj.to_mongo() for subj in subjects], default=json_util.default), 200
 
-
 @app.route('/data_transfers', methods=['GET'])
+@login_required
 def get_all_data_transfers():
     data_transfers = DataTransfer_db.objects()
     return json.dumps([dt.to_mongo() for dt in data_transfers], default=json_util.default), 200
 
-
 @app.route('/subjects/<subject_id>', methods=['DELETE'])
+@login_required
 def delete_subject(subject_id):
     try:
         subject = Subject_db.objects.get(id=subject_id)
         for comp in subject.components:
-            component = Component_db.objects.get(id=comp.id)
-            component.delete()
-            print(f"Component {comp.id} deleted.")
+            Component_db.objects(id=comp.id).delete()
         subject.delete()
         return jsonify({"message": f"Subject and associated components with ID {subject_id} deleted successfully."}), 200
     except DoesNotExist:
@@ -587,50 +531,41 @@ def delete_subject(subject_id):
     except Exception as e:
         return jsonify({"error": f"An unexpected error occurred: {str(e)}"}), 500
 
-
-# [done]
 @app.route('/components/<component_id>', methods=['DELETE'])
+@login_required
 def delete_component(component_id):
     try:
         component = Component_db.objects.get(id=component_id)
-        component.delete()  # Deletes the component from the database
+        component.delete()
         return jsonify({"message": "Component deleted successfully", "id": component_id}), 200
     except DoesNotExist:
         return jsonify({"error": "Component not found"}), 404
     except Exception as e:
         return jsonify({"error": f"An unexpected error occurred: {str(e)}"}), 500
 
-
 @app.route('/data_transfers/<transfer_id>', methods=['DELETE'])
+@login_required
 def delete_data_transfer(transfer_id):
     try:
         data_transfer = DataTransfer_db.objects.get(id=transfer_id)
-        data_transfer.delete()  # Deletes the data transfer from the database
+        data_transfer.delete()
         return jsonify({"message": "Data transfer deleted successfully", "id": transfer_id}), 200
     except DoesNotExist:
         return jsonify({"error": "Data transfer not found"}), 404
     except Exception as e:
         return jsonify({"error": f"An unexpected error occurred: {str(e)}"}), 500
 
-
 def server():
     app.run(debug=True, host="127.0.0.1", port=5000, use_reloader=False)
-    # remove use_reloader=False to run with Threads
 
-
-# Example usage
 if __name__ == "__main__":
     manager.load_all_subjects()
 
     time_tracker_thread = threading.Thread(target=time_tracker, daemon=True)
-    """ user_interaction_thread = threading.Thread( """
-    """     target=user_interaction, daemon=True) """
     server_thread = threading.Thread(target=server, daemon=True)
-    execute_thread = threading.Thread(
-        target=execute_scheduled_transfers, daemon=True)
+    execute_thread = threading.Thread(target=execute_scheduled_transfers, daemon=True)
 
     time_tracker_thread.start()
-    """ user_interaction_thread.start() """
     server_thread.start()
     execute_thread.start()
 
