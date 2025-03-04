@@ -1,13 +1,15 @@
 import re
 import os
 from flask import Flask, render_template, request, redirect, url_for, flash, session
-from flask_pymongo import PyMongo  # type: ignore
+from pymongo import MongoClient
 from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
 app.secret_key = os.getenv('SECRET_KEY', 'bf0060a011ea5949a54477076c3a616dcc3ae6145a8dd93bf731b5d5463e0de1')
-app.config['MONGO_URI'] = 'mongodb://localhost:27017/user_db'
-mongo = PyMongo(app)
+
+client = MongoClient('mongodb://localhost:27017/')
+db = client['planitly']
+users_collection = db['users']
 
 EMAIL_REGEX = r'^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$'
 
@@ -25,25 +27,25 @@ def register():
         password = request.form.get('password')
 
         if not re.match(EMAIL_REGEX, email):
-            flash("Invalid email format Please provide a valid email address", 'danger')
+            flash("Invalid email format. Please provide a valid email address.", 'danger')
             return redirect(url_for('register'))
 
         if not re.match(r"^(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$", password):
-            flash("Password must be at least 8 characters long, with one uppercase letter, one number, and one special character", 'danger')
+            flash("Password must be at least 8 characters long, with one uppercase letter, one number, and one special character.", 'danger')
             return redirect(url_for('register'))
-        
-        if mongo.db.users.find_one({'email': email}):
+
+        if users_collection.find_one({'email': email}):
             flash('Email already registered', 'danger')
             return redirect(url_for('register'))
 
         try:
             hashed_password = generate_password_hash(password)
-            mongo.db.users.insert_one({
+            users_collection.insert_one({
                 'username': username,
                 'email': email,
                 'password': hashed_password
             })
-            flash('Registration successful! Please log in', 'success')
+            flash('Registration successful! Please log in.', 'success')
             return redirect(url_for('login'))
         except Exception as e:
             flash('An error occurred during registration', 'danger')
@@ -56,14 +58,14 @@ def login():
     if request.method == 'POST':
         email = request.form.get('email')
         password = request.form.get('password')
-        
-        user = mongo.db.users.find_one({'email': email})
+
+        user = users_collection.find_one({'email': email})
 
         if user and check_password_hash(user['password'], password):
             session['username'] = user['username']
             flash('Login successful', 'success')
             return redirect(url_for('home'))
-        
+
         flash('Invalid credentials', 'danger')
 
     return render_template('login.html')
@@ -171,3 +173,4 @@ home.html :
     </div>
 </body>
 </html>
+"""
