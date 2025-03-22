@@ -2,27 +2,51 @@ import json
 import uuid
 import threading
 import time
+import re
 from datetime import datetime, timedelta
 from flask import Flask, request, jsonify, session
-from mongoengine import connect, Document, StringField, ListField, ReferenceField, DateTimeField, DictField, NULLIFY # type: ignore
-from mongoengine.errors import DoesNotExist, ValidationError # type: ignore
+from flask_jwt_extended import JWTManager, create_access_token , verify_jwt_in_request, get_jwt_identity
+from mongoengine import connect, Document, StringField, ListField, ReferenceField, DateTimeField, DictField, EmailField,BooleanField, NULLIFY  # type: ignore
+from mongoengine.errors import DoesNotExist, NotUniqueError, ValidationError  # type: ignore
 from bson import json_util
-from pytz import UTC # type: ignore
+from pytz import UTC  # type: ignore
 from functools import wraps
+from werkzeug.security import generate_password_hash, check_password_hash
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "supersecretkey")
 
 app = Flask(__name__)
+app.config["JWT_SECRET_KEY"] = JWT_SECRET_KEY
+jwt = JWTManager(app)
+
 connect(db="planitly", host="localhost", port=27017)
 
 # Authentication Middleware
-def login_required(f):
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        if 'user_id' not in session:
-            return jsonify({"error": "Authentication required"}), 401
-        return f(*args, **kwargs)
-    return decorated_function
 
-# Database Models
+
+def login_required(func):
+    """Middleware to protect routes that require authentication."""
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        try:
+            verify_jwt_in_request() # Check if token is present
+            user_id = get_jwt_identity()  # Extract user ID from token
+            user = User.objects(id=user_id).first()  # Fetch user from DB
+
+            if not user:
+                return jsonify({"error": "Unauthorized"}), 401
+
+            return func(*args, **kwargs)  # Proceed to the actual route
+        except Exception as e:
+            return jsonify({"error": str(e)}), 401
+
+    return wrapper# Database Models
+
+
 class Component_db(Document):
     id = StringField(primary_key=True)
     name = StringField(required=True)
@@ -32,23 +56,44 @@ class Component_db(Document):
     owner = StringField(required=True)  # Store user ID
     meta = {'collection': 'components'}
 
+
 class Subject_db(Document):
     id = StringField(primary_key=True)
     name = StringField(required=True)
-    components = ListField(ReferenceField(Component_db, reverse_delete_rule=NULLIFY))
+    components = ListField(ReferenceField(
+        Component_db, reverse_delete_rule=NULLIFY))
     owner = StringField(required=True)  # Store user ID
     meta = {'collection': 'subjects'}
 
+
 class DataTransfer_db(Document):
     id = StringField(primary_key=True)
-    source_component = ReferenceField(Component_db, reverse_delete_rule=NULLIFY, required=False)
-    target_component = ReferenceField(Component_db, reverse_delete_rule=NULLIFY, required=True)
+    source_component = ReferenceField(
+        Component_db, reverse_delete_rule=NULLIFY, required=False)
+    target_component = ReferenceField(
+        Component_db, reverse_delete_rule=NULLIFY, required=True)
     data_value = DictField(null=True)
     operation = StringField(required=True)
     schedule_time = DateTimeField()
     details = DictField(null=True)
     owner = StringField(required=True)  # Store user ID
     meta = {'collection': 'data_transfers'}
+
+
+class User(Document):
+    id = StringField(primary_key=True, auto_generate=True)
+    username = StringField(required=True, unique=True)
+    email = EmailField(required=True, unique=True)
+    password = StringField(required=True)
+    admin = BooleanField(default=False)
+    meta = {'collection': 'users'}
+
+    def hash_password(self):
+        self.password = generate_password_hash(self.password)
+
+    def check_password(self, password):
+        return check_password_hash(self.password, password)
+
 
 # Predefined data and widget types
 PREDEFINED_COMPONENT_TYPES = {
@@ -70,7 +115,7 @@ ACCEPTED_OPERATIONS = {
 
 
 class Component:
-    def __init__(self, name, comp_type, data=None, id=None, host_subject=None, owner = None):
+    def __init__(self, name, comp_type, data=None, id=None, host_subject=None, owner=None):
         self.name = name
         self.comp_type = comp_type
         self.data = data or PREDEFINED_COMPONENT_TYPES.get(name, {})
@@ -159,14 +204,18 @@ class DataTransfer:
         self.timestamp = datetime.now(UTC).isoformat()
 
     def execute(self):
-        source_component = Component_db.objects(id=self.source_component).first() if self.source_component else None
-        target_component = Component_db.objects(id=self.target_component).first()
+        source_component = Component_db.objects(
+            id=self.source_component).first() if self.source_component else None
+        target_component = Component_db.objects(
+            id=self.target_component).first()
 
         if not target_component or self.operation not in ACCEPTED_OPERATIONS.get(target_component.comp_type, []):
-            print(f"Operation '{self.operation}' not supported for component type '{target_component.comp_type}'")
+            print(f"Operation '{self.operation}' not supported for component type '{
+                  target_component.comp_type}'")
             return False
 
-        target_data = target_component.data.get("items") if isinstance(target_component.data, dict) and "items" in target_component.data else target_component.data.get("item")
+        target_data = target_component.data.get("items") if isinstance(
+            target_component.data, dict) and "items" in target_component.data else target_component.data.get("item")
         source_value = source_component.data if source_component else self.data_value
         if isinstance(source_value, dict) and len(source_value) == 1:
             source_value = list(source_value.values())[0]
@@ -185,7 +234,8 @@ class DataTransfer:
             target_data = not target_data
         elif self.operation in ["append", "remove_back", "remove_front", "delete_at", "push_at"] and isinstance(target_data, list):
             if self.operation == "append":
-                target_data.append({"item": source_value, "id": str(uuid.uuid4())})
+                target_data.append(
+                    {"item": source_value, "id": str(uuid.uuid4())})
             elif self.operation == "remove_back" and target_data:
                 self.details["removed"] = target_data.pop()
             elif self.operation == "remove_front" and target_data:
@@ -197,7 +247,8 @@ class DataTransfer:
             elif self.operation == "push_at" and isinstance(self.data_value, dict) and "index" in self.data_value:
                 index = self.data_value["index"]
                 if isinstance(index, int) and 0 <= index <= len(target_data):
-                    target_data.insert(index, {"item": source_value, "id": str(uuid.uuid4())})
+                    target_data.insert(
+                        index, {"item": source_value, "id": str(uuid.uuid4())})
         else:
             return False
 
@@ -205,7 +256,7 @@ class DataTransfer:
             target_component.data["items"] = target_data
         else:
             target_component.data["item"] = target_data
-        
+
         target_component.save()
         self.details["done"] = True
         return True
@@ -221,7 +272,7 @@ class DataTransfer:
             "details": self.details,
             "timestamp": self.timestamp
         }
-    
+
     @staticmethod
     def from_json(data):
         return DataTransfer(
@@ -231,7 +282,8 @@ class DataTransfer:
             data_value=data.get("data_value"),
             operation=data.get("operation"),
             details=data.get("details"),
-            schedule_time=datetime.fromisoformat(data["schedule_time"]) if data.get("schedule_time") else None
+            schedule_time=datetime.fromisoformat(
+                data["schedule_time"]) if data.get("schedule_time") else None
         )
 
     def save_to_db(self):
@@ -260,6 +312,7 @@ class DataTransfer:
                 schedule_time=data_transfer_db.schedule_time
             )
         return None
+
 
 class Subject:
     def __init__(self, name, id=None):
@@ -366,7 +419,9 @@ class SubjectManager:
             if subject:
                 self.subjects[subject.id] = subject
 
+
 manager = SubjectManager()
+
 
 def time_tracker():
     """Thread to keep track of the current time and execute scheduled transfers."""
@@ -376,41 +431,48 @@ def time_tracker():
             if transfer.schedule_time and current_time >= transfer.schedule_time:
                 print(f"Executing scheduled transfer at {current_time}")
                 transfer.execute()
-                manager.scheduled_transfers.remove(transfer)  # Remove completed transfer
+                manager.scheduled_transfers.remove(
+                    transfer)  # Remove completed transfer
         time.sleep(1)  # Check every second
+
 
 def execute_scheduled_transfers():
     """Thread to execute data transfers based on schedule."""
     while True:
         current_time = datetime.now(UTC)
-        pending_transfers = [t for t in manager.scheduled_transfers if t.schedule_time and current_time >= t.schedule_time]
+        pending_transfers = [
+            t for t in manager.scheduled_transfers if t.schedule_time and current_time >= t.schedule_time]
         for transfer in pending_transfers:
             print(f"Executing scheduled transfer: {transfer}")
             transfer.execute()
-            manager.scheduled_transfers.remove(transfer)  # Remove executed transfer
+            manager.scheduled_transfers.remove(
+                transfer)  # Remove executed transfer
         time.sleep(1)  # Check every second
 
 # [done]
+
+
 @app.route('/components', methods=['POST'])
 @login_required
 def create_component():
     data = request.json
     if 'id' in data and Component_db.objects(id=data['id']).first():
         return jsonify({"message": "Component with this ID already exists"}), 400
-    
+
     if 'host_subject' not in data:
         return jsonify({"message": "Host subject is required"}), 400
-    
+
     host_subject = Subject_db.objects(id=data['host_subject']).first()
     if not host_subject:
         return jsonify({"message": "Host subject not found"}), 404
-    
+
     if 'comp_type' not in data:
         return jsonify({"message": "Component type is required"}), 400
-    
+
     component = Component_db(**data)
     component.save()
     return jsonify({"message": "Component created", "id": str(component.id)}), 201
+
 
 @app.route('/subjects', methods=['POST'])
 @login_required
@@ -418,13 +480,14 @@ def create_subject():
     data = request.json
     if 'id' in data and Subject_db.objects(id=data['id']).first():
         return jsonify({"message": "Subject with this ID already exists"}), 400
-    
+
     component_ids = data.pop('components', []) if 'components' in data else []
     components = Component_db.objects.filter(id__in=component_ids)
-    
+
     subject = Subject_db(**data, components=components)
     subject.save()
     return jsonify({"message": "Subject created", "id": str(subject.id)}), 201
+
 
 @app.route('/data_transfers', methods=['POST'])
 @login_required
@@ -432,19 +495,22 @@ def create_data_transfer():
     try:
         data = request.json
         data_id = data.get('id', str(uuid.uuid4()))
-        source_component = Component_db.objects(id=data.get('source_component')).first()
-        target_component = Component_db.objects(id=data.get('target_component')).first()
-        
+        source_component = Component_db.objects(
+            id=data.get('source_component')).first()
+        target_component = Component_db.objects(
+            id=data.get('target_component')).first()
+
         if not target_component:
             return jsonify({"error": "Target component not found"}), 404
-        
+
         schedule_time = None
         if 'schedule_time' in data and data['schedule_time']:
             try:
-                schedule_time = datetime.fromisoformat(data['schedule_time'].replace("Z", "+00:00"))
+                schedule_time = datetime.fromisoformat(
+                    data['schedule_time'].replace("Z", "+00:00"))
             except ValueError:
                 return jsonify({"error": "Invalid date format for 'schedule_time'"}), 400
-        
+
         data_transfer = DataTransfer(
             id=data_id,
             source_component=source_component,
@@ -454,12 +520,12 @@ def create_data_transfer():
             schedule_time=schedule_time,
             details=data.get("details")
         )
-        
+
         if schedule_time and datetime.now(UTC) >= schedule_time:
             if data_transfer.execute():
                 return jsonify({"message": "Data transfer executed immediately", "id": str(data_transfer.id)}), 200
             return jsonify({"error": "Failed to execute data transfer"}), 500
-        
+
         data_transfer.save_to_db()
         return jsonify({"message": "Data transfer created", "id": str(data_transfer.id)}), 201
     except DoesNotExist as e:
@@ -468,6 +534,7 @@ def create_data_transfer():
         return jsonify({"error": f"Validation error: {str(e)}"}), 400
     except Exception as e:
         return jsonify({"error": f"An unexpected error occurred: {str(e)}"}), 500
+
 
 @app.route('/subjects/<subject_id>', methods=['GET'])
 @login_required
@@ -478,6 +545,7 @@ def get_subject(subject_id):
     except DoesNotExist:
         return jsonify({"error": "Subject not found"}), 404
 
+
 @app.route('/components/<component_id>', methods=['GET'])
 @login_required
 def get_component_by_id(component_id):
@@ -486,7 +554,7 @@ def get_component_by_id(component_id):
         return jsonify(component.to_mongo().to_dict()), 200
     except DoesNotExist:
         return jsonify({"error": "Component not found"}), 404
-    
+
 
 @app.route('/data_transfers/<transfer_id>', methods=['GET'])
 @login_required
@@ -499,11 +567,13 @@ def get_data_transfer(transfer_id):
     except Exception as e:
         return jsonify({"error": f"An unexpected error occurred: {str(e)}"}), 500
 
+
 @app.route('/components', methods=['GET'])
 @login_required
 def get_all_components():
     components = Component_db.objects()
     return json.dumps([comp.to_mongo() for comp in components], default=json_util.default), 200
+
 
 @app.route('/subjects', methods=['GET'])
 @login_required
@@ -511,11 +581,13 @@ def get_all_subjects():
     subjects = Subject_db.objects()
     return json.dumps([subj.to_mongo() for subj in subjects], default=json_util.default), 200
 
+
 @app.route('/data_transfers', methods=['GET'])
 @login_required
 def get_all_data_transfers():
     data_transfers = DataTransfer_db.objects()
     return json.dumps([dt.to_mongo() for dt in data_transfers], default=json_util.default), 200
+
 
 @app.route('/subjects/<subject_id>', methods=['DELETE'])
 @login_required
@@ -531,6 +603,7 @@ def delete_subject(subject_id):
     except Exception as e:
         return jsonify({"error": f"An unexpected error occurred: {str(e)}"}), 500
 
+
 @app.route('/components/<component_id>', methods=['DELETE'])
 @login_required
 def delete_component(component_id):
@@ -542,6 +615,7 @@ def delete_component(component_id):
         return jsonify({"error": "Component not found"}), 404
     except Exception as e:
         return jsonify({"error": f"An unexpected error occurred: {str(e)}"}), 500
+
 
 @app.route('/data_transfers/<transfer_id>', methods=['DELETE'])
 @login_required
@@ -555,15 +629,82 @@ def delete_data_transfer(transfer_id):
     except Exception as e:
         return jsonify({"error": f"An unexpected error occurred: {str(e)}"}), 500
 
+
+@app.route("/register", methods=["POST"])
+def register():
+    try:
+        data = request.json
+        if not data:
+            return jsonify({"message": "Invalid request", "status": "error"}), 400
+        username = data.get("username")
+        email = data.get("email")
+        password = data.get("password")
+        if not username or not email or not password:
+            return jsonify({"message": "All fields are required", "status": "error"}), 400
+
+        if not re.match(r"^(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&^#_+=<>.,;:|\\/-])[A-Za-z\d@$!%*?&^#_+=<>.,;:|\\/-]{8,}$", password):
+            return jsonify({"message": "Password must be at least 8 characters long, with one uppercase letter, one number, and one special character.", "status": "error"}), 400
+
+        user = User(id=str(uuid.uuid4()), username=username,
+                    email=email, password=password)
+        user.hash_password()
+        user.save()
+
+        # Generate JWT token
+        access_token = create_access_token(identity=str(user.id))
+
+        return jsonify({
+            "message": "User registered successfully",
+            "token": access_token
+        }), 201
+
+    except ValidationError:
+        return jsonify({"message": "Invalid data", "status": "error"}), 400
+    except NotUniqueError:
+        return jsonify({"message": "Username or Email already exist", "status": "error"}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/login", methods=["POST"])
+def login():
+    try:
+        data = request.json
+        email = data.get("email")
+        password = data.get("password")
+
+        # Check if user exists
+        user = User.objects(email=email).first()
+        if not user or not user.check_password(password):
+            return jsonify({"error": "Invalid credentials"}), 401
+
+        # Generate JWT token
+        access_token = create_access_token(
+            identity=str(user.id), 
+            additional_claims={"admin": user.is_admin}, 
+            expires_delta=timedelta(days=30)
+        )
+
+        return jsonify({
+            "message": "Login successful",
+            "token": access_token
+        }), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 def server():
     app.run(debug=True, host="127.0.0.1", port=5000, use_reloader=False)
+
 
 if __name__ == "__main__":
     manager.load_all_subjects()
 
     time_tracker_thread = threading.Thread(target=time_tracker, daemon=True)
     server_thread = threading.Thread(target=server, daemon=True)
-    execute_thread = threading.Thread(target=execute_scheduled_transfers, daemon=True)
+    execute_thread = threading.Thread(
+        target=execute_scheduled_transfers, daemon=True)
 
     time_tracker_thread.start()
     server_thread.start()
