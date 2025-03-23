@@ -5,3 +5,4 @@ pytz
 python-dotenv
 mongoengine
 boto3
+werkzeug
