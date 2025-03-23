@@ -11,8 +11,8 @@ from bson import json_util
 from pytz import UTC  # type: ignore
 import os
 from dotenv import load_dotenv
-from utils import login_required
-from models import User, Component, Component_db, Subject ,Subject_db, DataTransfer, DataTransfer_db
+from middleWares import login_required, admin_required
+from models import User, Component, Component_db, Subject, Subject_db, DataTransfer, DataTransfer_db
 
 load_dotenv()
 
@@ -21,6 +21,7 @@ JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "supersecretkey")
 app = Flask(__name__)
 app.config["JWT_SECRET_KEY"] = JWT_SECRET_KEY
 jwt = JWTManager(app)
+
 
 class SubjectManager:
     _instance = None
@@ -102,24 +103,30 @@ def execute_scheduled_transfers():
 @login_required
 def create_component():
     data = request.json
-    if 'id' in data and Component_db.objects(id=data['id']).first():
+    # check if the component already exists
+    if 'id' in data and Component.load_from_db(data['id']):
         return jsonify({"message": "Component with this ID already exists"}), 400
 
+    # check if the host subject id exists
     if 'host_subject' not in data:
         return jsonify({"message": "Host subject is required"}), 400
 
-    host_subject = Subject_db.objects(id=data['host_subject']).first()
+    # check if the host subject exists
+    host_subject = Subject.load_from_db(data['host_subject'])
     if not host_subject:
         return jsonify({"message": "Host subject not found"}), 404
 
     if 'comp_type' not in data:
         return jsonify({"message": "Component type is required"}), 400
 
-    component = Component_db(**data)
-    component.save()
+    component = Component(**data, owner=request.user_id)
+    component.save_to_db()
+    host_subject.components.append(component.id)
+    host_subject.save_to_db()
     return jsonify({"message": "Component created", "id": str(component.id)}), 201
 
 
+# create a new subject route
 @app.route('/subjects', methods=['POST'])
 @login_required
 def create_subject():
@@ -127,11 +134,12 @@ def create_subject():
     if 'id' in data and Subject_db.objects(id=data['id']).first():
         return jsonify({"message": "Subject with this ID already exists"}), 400
 
-    component_ids = data.pop('components', []) if 'components' in data else []
-    components = Component_db.objects.filter(id__in=component_ids)
-
-    subject = Subject_db(**data, components=components)
-    subject.save()
+    if data.get('template'):
+        # todo create a subject from a template
+        pass
+    # create a new subject from data and save it
+    subject = Subject(**data, owner=request.user_id)
+    subject.save_to_db()
     return jsonify({"message": "Subject created", "id": str(subject.id)}), 201
 
 
@@ -216,14 +224,29 @@ def get_data_transfer(transfer_id):
 
 @app.route('/components', methods=['GET'])
 @login_required
+@admin_required
 def get_all_components():
     components = Component_db.objects()
     return json.dumps([comp.to_mongo() for comp in components], default=json_util.default), 200
 
 
+# get all subjects route
 @app.route('/subjects', methods=['GET'])
 @login_required
+@admin_required
 def get_all_subjects():
+    subjects = Subject_db.objects()
+    return json.dumps([subj.to_mongo() for subj in subjects], default=json_util.default), 200
+
+
+# get by User_id subjects route
+@app.route('/subjects/user/<user_id>', methods=['GET'])
+@login_required
+def get_user_subjects(user_id):
+    # if the user is the owner or an admin, return all subjects under user
+    if request.user_id == user_id or request.user.admin:
+        subjects = Subject_db.objects(owner=user_id)
+        return json.dumps([subj.to_mongo() for subj in subjects], default=json_util.default), 200
     subjects = Subject_db.objects()
     return json.dumps([subj.to_mongo() for subj in subjects], default=json_util.default), 200
 
@@ -240,10 +263,11 @@ def get_all_data_transfers():
 def delete_subject(subject_id):
     try:
         subject = Subject_db.objects.get(id=subject_id)
-        for comp in subject.components:
-            Component_db.objects(id=comp.id).delete()
-        subject.delete()
-        return jsonify({"message": f"Subject and associated components with ID {subject_id} deleted successfully."}), 200
+        if request.user_id == subject.owner or request.user.admin:
+            for comp in subject.components:
+                comp.delete()
+            subject.delete()
+            return jsonify({"message": f"Subject and associated components with ID {subject_id} deleted successfully."}), 200
     except DoesNotExist:
         return jsonify({"error": "Subject not found"}), 404
     except Exception as e:
@@ -254,11 +278,21 @@ def delete_subject(subject_id):
 @login_required
 def delete_component(component_id):
     try:
+        # Find and delete the component
         component = Component_db.objects.get(id=component_id)
-        component.delete()
+        if request.user_id == component.owner or request.user.admin:
+            component_host_subject = component.host_subject  # Get the host subject ID
+
+            # Find the hosting subject and remove the component ID from the components list
+            subject = Subject.load_from_db(component_host_subject.id)
+            print(subject.components)
+            subject.components.remove(component_id)
+            subject.save_to_db()
+            component.delete()
+
         return jsonify({"message": "Component deleted successfully", "id": component_id}), 200
     except DoesNotExist:
-        return jsonify({"error": "Component not found"}), 404
+        return jsonify({"error": "Component or Subject not found"}), 404
     except Exception as e:
         return jsonify({"error": f"An unexpected error occurred: {str(e)}"}), 500
 
@@ -268,6 +302,7 @@ def delete_component(component_id):
 def delete_data_transfer(transfer_id):
     try:
         data_transfer = DataTransfer_db.objects.get(id=transfer_id)
+        # delete the data transfer from data_base
         data_transfer.delete()
         return jsonify({"message": "Data transfer deleted successfully", "id": transfer_id}), 200
     except DoesNotExist:
@@ -338,6 +373,11 @@ def login():
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+@app.route("/", methods=["GET"])
+def home():
+    return jsonify({"message": "Welcome to the Planitly API!"}), 200
 
 
 def server():

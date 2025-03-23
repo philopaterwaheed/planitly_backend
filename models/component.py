@@ -1,4 +1,4 @@
-from mongoengine import Document, StringField, DictField
+from mongoengine import Document, StringField, DictField, ReferenceField
 import uuid
 
 # Predefined data and widget types
@@ -12,11 +12,10 @@ PREDEFINED_COMPONENT_TYPES = {
 }
 
 
-
 class Component_db(Document):
     id = StringField(primary_key=True)
     name = StringField(required=True)
-    host_subject = StringField(required=True)
+    host_subject = ReferenceField("Subject_db", required=True)
     data = DictField()
     comp_type = StringField(required=True)
     owner = StringField(required=True)  # Store user ID
@@ -61,7 +60,7 @@ class Component:
         component_db = Component_db(
             id=self.id,
             name=self.name,
-            hostSubject=self.host_subject,
+            host_subject=self.host_subject,
             data=self.data,
             comp_type=self.comp_type,
             owner=self.owner

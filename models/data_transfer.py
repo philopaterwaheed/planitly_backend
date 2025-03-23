@@ -40,62 +40,103 @@ class DataTransfer:
         self.timestamp = datetime.now(UTC).isoformat()
 
     def execute(self):
-        source_component = Component_db.objects(
-            id=self.source_component).first() if self.source_component else None
-        target_component = Component_db.objects(
-            id=self.target_component).first()
+        source_component = target_component = None
+        if self.source_component:
+            source_component = Component_db.objects(
+                id=self.source_component).first()
+        if self.target_component:
+            target_component = Component_db.objects(
+                id=self.target_component).first()
 
-        if not target_component or self.operation not in ACCEPTED_OPERATIONS.get(target_component.comp_type, []):
+        if self.operation not in ACCEPTED_OPERATIONS[target_component.comp_type]:
             print(f"Operation '{self.operation}' not supported for component type '{
-                  target_component.comp_type}'")
-            return False
+                  target_component.comp_type}'.")
+            return
 
-        target_data = target_component.data.get("items") if isinstance(
-            target_component.data, dict) and "items" in target_component.data else target_component.data.get("item")
-        source_value = source_component.data if source_component else self.data_value
-        if isinstance(source_value, dict) and len(source_value) == 1:
-            source_value = list(source_value.values())[0]
-        if isinstance(target_data, dict) and len(target_data) == 1:
-            target_data = list(target_data.values())[0]
+        """Perform the data transfer and apply the operation."""
+        if target_component:
+            if isinstance(target_component.data, dict) and "items" in target_component.data:
+                target_data = target_component.data.get("items")
+            elif "item" in target_component.data:
+                target_data = target_component.data
 
-        if self.operation == "replace":
-            target_data = source_value
-        elif self.operation == "add" and isinstance(target_data, (int, float)):
-            target_data += source_value
-        elif self.operation == "subtract" and isinstance(target_data, (int, float)):
-            target_data -= source_value
-        elif self.operation == "multiply" and isinstance(target_data, (int, float)):
-            target_data *= source_value
-        elif self.operation == "toggle" and isinstance(target_data, bool):
-            target_data = not target_data
-        elif self.operation in ["append", "remove_back", "remove_front", "delete_at", "push_at"] and isinstance(target_data, list):
-            if self.operation == "append":
-                target_data.append(
-                    {"item": source_value, "id": str(uuid.uuid4())})
-            elif self.operation == "remove_back" and target_data:
-                self.details["removed"] = target_data.pop()
-            elif self.operation == "remove_front" and target_data:
-                self.details["removed"] = target_data.pop(0)
-            elif self.operation == "delete_at" and isinstance(self.data_value, dict) and "index" in self.data_value:
-                index = self.data_value["index"]
-                if isinstance(index, int) and 0 <= index < len(target_data):
-                    self.details["removed"] = target_data.pop(index)
-            elif self.operation == "push_at" and isinstance(self.data_value, dict) and "index" in self.data_value:
-                index = self.data_value["index"]
-                if isinstance(index, int) and 0 <= index <= len(target_data):
-                    target_data.insert(
-                        index, {"item": source_value, "id": str(uuid.uuid4())})
-        else:
-            return False
-
-        if isinstance(target_component.data, dict) and "items" in target_component.data:
-            target_component.data["items"] = target_data
-        else:
-            target_component.data["item"] = target_data
-
-        target_component.save()
-        self.details["done"] = True
-        return True
+            # Use source component data if available, else use unbound data_value
+            source_value = None
+            if source_component:
+                source_value = source_component.data
+            else:
+                source_value = self.data_value
+            if isinstance(source_value, dict) and len(source_value) == 1:
+                source_value = list(source_value.values())[0]
+            if isinstance(target_data, dict) and len(target_data) == 1:
+                target_data = list(target_data.values())[0]
+            # type checks
+            if target_component.comp_type == "Array_generic":
+                pass
+            elif target_component and target_component.comp_type.startswith("Array_type") and isinstance(target_data, list):
+                if source_component and source_component.comp_type != target_component.data["type"]:
+                    print(f"Source and target components must be of the same type.{
+                          type(self.data_value).__name__}.")
+                    return
+            elif (source_component is not None) and (source_component.comp_type != target_component.comp_type or type(source_value).__name__ != target_component.comp_type):
+                print(f"Source and target components must be of the same type.{
+                    type(source_value).__name__}{source_component.comp_type}.")
+                return
+            # by default the remove_front , remove_front don't need source data
+            if source_value is not None or self.operation == "remove_back" or self.operation == "remove_front":
+                print(source_value)
+                print(target_data)
+                # Perform operations based on type and specified action
+                if self.operation == "replace":
+                    target_data = source_value
+                elif self.operation == "add" and isinstance(source_value, (int, float)) and isinstance(target_data, (int, float)):
+                    target_data += source_value
+                elif self.operation == "subtract" and isinstance(source_value, (int, float)) and isinstance(target_data, (int, float)):
+                    target_data -= source_value
+                elif self.operation == "multiply" and isinstance(source_value, (int, float)) and isinstance(target_data, (int, float)):
+                    target_data *= source_value
+                elif self.operation == "subtract" and isinstance(source_value, (int, float)) and isinstance(target_data, (int, float)):
+                    target_data -= source_value
+                elif self.operation == "toggle" and isinstance(target_data, bool):
+                    target_data = not target_data
+                elif self.operation == "append" and isinstance(target_data, list) and (target_component.comp_type == "Array_generic" or type(source_value).__name__ == target_component.data["type"]):
+                    target_data.append(
+                        {"item": source_value, "id": str(uuid.uuid4())})
+                elif self.operation == "remove_back" and isinstance(target_data, list) and len(target_data) >= 0:
+                    removed = target_data.pop()
+                    if (isinstance(removed, dict)):
+                        self.details["removed"] = removed
+                elif self.operation == "remove_front" and isinstance(target_data, list) and len(target_data) >= 0:
+                    removed = target_data.pop(0)
+                    if (isinstance(removed, dict)):
+                        self.details["removed"] = removed
+                elif self.operation == "delete_at" and isinstance(target_data, list) and isinstance(self.data_value, dict) and "index" in self.data_value and (target_component.comp_type == "Array_generic" or type(target_data["item"]).__name__ == target_component.data["type"]):
+                    print(f"target_data index : {target_data}")
+                    index = self.data_value.get("index")
+                    removed = None
+                    if isinstance(index, int) and 0 <= index <= len(target_data):
+                        removed = target_data.pop(int(index))
+                    if (isinstance(removed, dict)):
+                        self.details["removed"] = removed
+                elif self.operation == "push_at" and isinstance(target_data, list) and isinstance(self.data_value, dict) and "index" in self.data_value and (target_component.comp_type == "Array_generic" or type(source_value["item"]).__name__ == target_component.data["type"]):
+                    index = self.data_value.get("index")
+                    item = source_value.get("item")
+                    if isinstance(index, int) and 0 <= index <= len(target_data):
+                        target_data.insert(
+                            index, {"item": source_value["item"], "id": str(uuid.uuid4())})
+                else:
+                    return False
+                if not (target_component.comp_type.startswith("Array") and isinstance(target_data, list)) or (target_component.comp_type not in ["Array_type", "Array_generic"]):
+                    target_component.data["item"] = target_data
+                else:
+                    target_component.data["items"] = target_data
+                target_component.save()
+                self.details["done"] = True
+                return True
+            else:
+                print(f"Source data not available for operation '{
+                      self.operation}'.")
+                return False
 
     def to_json(self):
         return {
