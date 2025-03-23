@@ -44,7 +44,7 @@ class Subject:
     def from_json(data):
         subject = Subject(name=data["name"], id=data["id"])
         for comp_id in data["components"]:
-            component = Component.load_from_file(comp_id)
+            component = Component_db.objects(id=comp_id).fist()
             subject.components[comp_id] = component
         return subject
 
