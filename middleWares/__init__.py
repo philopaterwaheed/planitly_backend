@@ -1,7 +1,7 @@
 from flask_jwt_extended import JWTManager, create_access_token, verify_jwt_in_request, get_jwt_identity
 from models import User
 from functools import wraps
-from flask import Flask, request, jsonify, session
+from flask import request, jsonify
 
 # Authentication Middleware
 
