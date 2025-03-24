@@ -1,5 +1,4 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from bson import json_util
 from models import Subject_db
 from middleWares import get_current_user, admin_required
 from models import User, Component, Component_db, Subject, Subject_db, DataTransfer, DataTransfer_db
@@ -38,7 +37,7 @@ async def get_component_by_id(component_id: str):
     """Retrieve a component by its ID."""
     try:
         component = Component_db.objects.get(id=component_id)
-        return json_util.loads(component.to_mongo())
+        return component.to_mongo()
     except DoesNotExist:
         raise HTTPException(status_code=404, detail="Component not found")
 
@@ -46,7 +45,7 @@ async def get_component_by_id(component_id: str):
 async def get_all_components():
     """Retrieve all components (Admin Only)."""
     components = Component_db.objects()
-    return json_util.loads(json_util.dumps([comp.to_mongo() for comp in components]))
+    return [comp.to_mongo() for comp in components]
 
 @router.delete("/{component_id}", status_code=status.HTTP_200_OK)
 async def delete_component(component_id: str, current_user=Depends(get_current_user)):

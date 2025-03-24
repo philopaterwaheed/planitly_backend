@@ -3,7 +3,6 @@ import time
 from datetime import datetime
 from fastapi import FastAPI, Depends, HTTPException, status
 from mongoengine.errors import DoesNotExist
-from bson import json_util
 from pytz import UTC
 from models import User, Component, Subject, Subject_db, DataTransfer, DataTransfer_db
 from fastapi.middleware.cors import CORSMiddleware
@@ -144,39 +143,39 @@ def execute_scheduled_transfers():
 """"""
 
 
-@app.get("/data_transfers/{transfer_id}", status_code=status.HTTP_200_OK, dependencies=[Depends(get_current_user)])
-async def get_data_transfer(transfer_id: str):
-    """Retrieve a data transfer by its ID."""
-    try:
-        data_transfer = DataTransfer_db.objects.get(id=transfer_id)
-        return json_util.loads(json_util.dumps(data_transfer.to_mongo()))
-    except DoesNotExist:
-        raise HTTPException(status_code=404, detail="Data transfer not found")
-    except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"An unexpected error occurred: {str(e)}")
-
-
-@app.get("/data_transfers", dependencies=[Depends(get_current_user)], status_code=status.HTTP_200_OK)
-async def get_all_data_transfers():
-    """Retrieve all data transfers."""
-    data_transfers = DataTransfer_db.objects()
-    return json_util.loads(json_util.dumps([dt.to_mongo() for dt in data_transfers]))
-
-
-@app.delete("/data_transfers/{transfer_id}", status_code=status.HTTP_200_OK)
-async def delete_data_transfer(transfer_id: str, current_user=Depends(get_current_user)):
-    """Delete a data transfer."""
-    try:
-        data_transfer = DataTransfer_db.objects.get(id=transfer_id)
-        data_transfer.delete()
-        return {"message": "Data transfer deleted successfully", "id": transfer_id}
-    except DoesNotExist:
-        raise HTTPException(status_code=404, detail="Data transfer not found")
-    except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"An unexpected error occurred: {str(e)}")
-
+""" @app.get("/data_transfers/{transfer_id}", status_code=status.HTTP_200_OK, dependencies=[Depends(get_current_user)]) """
+""" async def get_data_transfer(transfer_id: str): """
+"""Retrieve a data transfer by its ID."""
+"""     try: """
+"""         data_transfer = DataTransfer_db.objects.get(id=transfer_id) """
+"""         return json_util.loads(json_util.dumps(data_transfer.to_mongo())) """
+"""     except DoesNotExist: """
+"""         raise HTTPException(status_code=404, detail="Data transfer not found") """
+"""     except Exception as e: """
+"""         raise HTTPException( """
+"""             status_code=500, detail=f"An unexpected error occurred: {str(e)}") """
+""""""
+""""""
+""" @app.get("/data_transfers", dependencies=[Depends(get_current_user)], status_code=status.HTTP_200_OK) """
+""" async def get_all_data_transfers(): """
+"""Retrieve all data transfers."""
+"""     data_transfers = DataTransfer_db.objects() """
+"""     return json_util.loads(json_util.dumps([dt.to_mongo() for dt in data_transfers])) """
+""""""
+""""""
+""" @app.delete("/data_transfers/{transfer_id}", status_code=status.HTTP_200_OK) """
+""" async def delete_data_transfer(transfer_id: str, current_user=Depends(get_current_user)): """
+"""Delete a data transfer."""
+"""     try: """
+"""         data_transfer = DataTransfer_db.objects.get(id=transfer_id) """
+"""         data_transfer.delete() """
+"""         return {"message": "Data transfer deleted successfully", "id": transfer_id} """
+"""     except DoesNotExist: """
+"""         raise HTTPException(status_code=404, detail="Data transfer not found") """
+"""     except Exception as e: """
+"""         raise HTTPException( """
+"""             status_code=500, detail=f"An unexpected error occurred: {str(e)}") """
+""""""
 
 @app.get("/")
 async def home():

@@ -1,5 +1,4 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from bson import json_util
 from models import Subject_db
 from middleWares import get_current_user, admin_required
 from models import User, Component, Component_db, Subject, Subject_db, DataTransfer, DataTransfer_db
@@ -32,7 +31,7 @@ async def get_subject(subject_id: str):
     """Retrieve a subject by its ID."""
     try:
         subject = Subject_db.objects.get(id=subject_id)
-        return json_util.loads(subject.to_mongo())
+        return subject.to_mongo()
     except DoesNotExist:
         raise HTTPException(status_code=404, detail="Subject not found")
 
@@ -41,7 +40,7 @@ async def get_subject(subject_id: str):
 async def get_all_subjects():
     """Retrieve all subjects (Admin Only)."""
     subjects = Subject_db.objects()
-    return json_util.loads(json_util.dumps([subj.to_mongo() for subj in subjects]))
+    return [subj.to_mongo() for subj in subjects]
 
 # get by User_id subjects route
 @router.get("/user/{user_id}", status_code=status.HTTP_200_OK)
@@ -49,7 +48,7 @@ async def get_user_subjects(user_id: str, current_user=Depends(get_current_user)
     """Retrieve subjects for a specific user."""
     if str(current_user.id) == user_id or current_user.admin:
         subjects = Subject_db.objects(owner=user_id)
-        return json_util.loads(json_util.dumps([subj.to_mongo() for subj in subjects]))
+        return [subj.to_mongo() for subj in subjects]
     raise HTTPException(
         status_code=403, detail="Not authorized to access these subjects")
 

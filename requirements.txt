@@ -4,7 +4,6 @@ python-multipart
 mongoengine
 pytz
 python-dotenv
-bson
 passlib
 werkzeug
 python-jose
