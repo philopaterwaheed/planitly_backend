@@ -42,7 +42,7 @@ class Subject:
         return {
             "id": self.id,
             "name": self.name,
-            "components": list(self.components.keys())
+            "components": self.components
         }
 
     @staticmethod

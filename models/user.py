@@ -1,4 +1,3 @@
-
 from mongoengine import Document, StringField, EmailField, BooleanField
 from werkzeug.security import generate_password_hash, check_password_hash
 

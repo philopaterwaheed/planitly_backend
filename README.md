@@ -185,18 +185,12 @@ Response:
 - **routes/**: API route handlers.
 - **tests/**: Unit tests for backend APIs.
 
-##  Requirements
-
-- Python 3.8+
-- Flask
-- MongoDB
-
 ##  How to Run
 
    ```bash
    git clone https://github.com/your-username/planitly_backend.git
    cd planitly_backend
    pip install -r requirements.txt
-   python app.py
+   uvicorn main:app --reload
 ```
 

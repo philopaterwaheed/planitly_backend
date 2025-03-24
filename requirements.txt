@@ -1,8 +1,10 @@
-Flask
-Flask-JWT-Extended
-flask-mongoengine
+fastapi
+uvicorn
+python-multipart
+mongoengine
 pytz
 python-dotenv
-mongoengine
-boto3
+bson
+passlib
 werkzeug
+python-jose
