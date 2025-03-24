@@ -7,3 +7,4 @@ python-dotenv
 passlib
 werkzeug
 python-jose
+pybind11
