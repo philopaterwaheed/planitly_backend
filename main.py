@@ -6,7 +6,7 @@ from mongoengine.errors import DoesNotExist
 from pytz import UTC
 from models import User, Component, Subject, Subject_db, DataTransfer, DataTransfer_db, Connection_db, Connection
 from fastapi.middleware.cors import CORSMiddleware
-from routes import subjects, components, auth, connection
+from routes import subjects, components, auth, dataTransfers, connection
 
 
 app = FastAPI(title="Planitly API")
@@ -95,92 +95,13 @@ def execute_scheduled_transfers():
         time.sleep(1)  # Check every second
 
 
-""" @app.route('/data_transfers', methods=['POST']) """
-""" @get_current_user """
-""" def create_data_transfer(): """
-"""     try: """
-"""         data = request.json """
-"""         data_id = data.get('id', str(uuid.uuid4())) """
-"""         source_component = Component_db.objects( """
-"""             id=data.get('source_component')).first() """
-"""         target_component = Component_db.objects( """
-"""             id=data.get('target_component')).first() """
-""""""
-"""         if not target_component: """
-"""             return jsonify({"error": "Target component not found"}), 404 """
-""""""
-"""         schedule_time = None """
-"""         if 'schedule_time' in data and data['schedule_time']: """
-"""             try: """
-"""                 schedule_time = datetime.fromisoformat( """
-"""                     data['schedule_time'].replace("Z", "+00:00")) """
-"""             except ValueError: """
-"""                 return jsonify({"error": "Invalid date format for 'schedule_time'"}), 400 """
-""""""
-"""         data_transfer = DataTransfer( """
-"""             id=data_id, """
-"""             source_component=source_component, """
-"""             target_component=target_component, """
-"""             data_value=data.get("data_value"), """
-"""             operation=data.get("operation"), """
-"""             schedule_time=schedule_time, """
-"""             details=data.get("details") """
-"""         ) """
-""""""
-"""         if schedule_time and datetime.now(UTC) >= schedule_time: """
-"""             if data_transfer.execute(): """
-"""                 return jsonify({"message": "Data transfer executed immediately", "id": str(data_transfer.id)}), 200 """
-"""             return jsonify({"error": "Failed to execute data transfer"}), 500 """
-""""""
-"""         data_transfer.save_to_db() """
-"""         return jsonify({"message": "Data transfer created", "id": str(data_transfer.id)}), 201 """
-"""     except DoesNotExist as e: """
-"""         return jsonify({"error": f"Component not found: {str(e)}"}), 404 """
-"""     except ValidationError as e: """
-"""         return jsonify({"error": f"Validation error: {str(e)}"}), 400 """
-"""     except Exception as e: """
-"""         return jsonify({"error": f"An unexpected error occurred: {str(e)}"}), 500 """
-""""""
-
-
-""" @app.get("/data_transfers/{transfer_id}", status_code=status.HTTP_200_OK, dependencies=[Depends(get_current_user)]) """
-""" async def get_data_transfer(transfer_id: str): """
-"""Retrieve a data transfer by its ID."""
-"""     try: """
-"""         data_transfer = DataTransfer_db.objects.get(id=transfer_id) """
-"""         return json_util.loads(json_util.dumps(data_transfer.to_mongo())) """
-"""     except DoesNotExist: """
-"""         raise HTTPException(status_code=404, detail="Data transfer not found") """
-"""     except Exception as e: """
-"""         raise HTTPException( """
-"""             status_code=500, detail=f"An unexpected error occurred: {str(e)}") """
-""""""
-""""""
-""" @app.get("/data_transfers", dependencies=[Depends(get_current_user)], status_code=status.HTTP_200_OK) """
-""" async def get_all_data_transfers(): """
-"""Retrieve all data transfers."""
-"""     data_transfers = DataTransfer_db.objects() """
-"""     return json_util.loads(json_util.dumps([dt.to_mongo() for dt in data_transfers])) """
-""""""
-""""""
-""" @app.delete("/data_transfers/{transfer_id}", status_code=status.HTTP_200_OK) """
-""" async def delete_data_transfer(transfer_id: str, current_user=Depends(get_current_user)): """
-"""Delete a data transfer."""
-"""     try: """
-"""         data_transfer = DataTransfer_db.objects.get(id=transfer_id) """
-"""         data_transfer.delete() """
-"""         return {"message": "Data transfer deleted successfully", "id": transfer_id} """
-"""     except DoesNotExist: """
-"""         raise HTTPException(status_code=404, detail="Data transfer not found") """
-"""     except Exception as e: """
-"""         raise HTTPException( """
-"""             status_code=500, detail=f"An unexpected error occurred: {str(e)}") """
-""""""
-
 @app.get("/")
 async def home():
     return {"message": "Welcome to the Planitly API!"}
 
+@app.get("/time")
+async def get_time():
+    return {"time": datetime.now(UTC).isoformat()}
 
 def run_server():
     """Run FastAPI server."""
@@ -193,7 +114,7 @@ app.include_router(subjects.router)
 app.include_router(components.router)
 app.include_router(auth.router)
 app.include_router(connection.router)
-
+app.include_router(dataTransfers.router)
 
 if __name__ == "__main__":
     manager.load_all_subjects()

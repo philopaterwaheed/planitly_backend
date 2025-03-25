@@ -1,4 +1,6 @@
-from .component import DataTransfer_db, DataTransfer, Component, PREDEFINED_COMPONENT_TYPES, Subject_db
+from .component import Component, PREDEFINED_COMPONENT_TYPES
+from .subject import Subject, Subject_db
+from .dataTransfer import DataTransfer_db, DataTransfer
 import uuid
 from mongoengine import Document, StringField, DictField, ReferenceField, ListField, DateTimeField, NULLIFY
 from mongoengine.errors import DoesNotExist
