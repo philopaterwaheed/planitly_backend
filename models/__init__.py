@@ -2,6 +2,7 @@ from .user import User
 from .data_transfer import DataTransfer_db, DataTransfer
 from .subject import Subject_db, Subject
 from .component import Component_db, Component
+from .connection import Connection_db, Connection
 from mongoengine import connect
 from dotenv import load_dotenv
 import os
