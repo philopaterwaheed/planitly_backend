@@ -4,9 +4,9 @@ from datetime import datetime
 from fastapi import FastAPI, Depends, HTTPException, status
 from mongoengine.errors import DoesNotExist
 from pytz import UTC
-from models import User, Component, Subject, Subject_db, DataTransfer, DataTransfer_db
+from models import User, Component, Subject, Subject_db, DataTransfer, DataTransfer_db, Connection_db, Connection
 from fastapi.middleware.cors import CORSMiddleware
-from routes import subjects, components, auth
+from routes import subjects, components, auth, connection
 
 
 app = FastAPI(title="Planitly API")
@@ -192,6 +192,8 @@ def run_server():
 app.include_router(subjects.router)
 app.include_router(components.router)
 app.include_router(auth.router)
+app.include_router(connection.router)
+
 
 if __name__ == "__main__":
     manager.load_all_subjects()
