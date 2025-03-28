@@ -1,5 +1,5 @@
 from .user import User
-from .data_transfer import DataTransfer_db, DataTransfer
+from .dataTransfer import DataTransfer_db, DataTransfer
 from .subject import Subject_db, Subject
 from .component import Component_db, Component
 from .connection import Connection_db, Connection

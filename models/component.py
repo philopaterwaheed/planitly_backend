@@ -1,14 +1,15 @@
 from mongoengine import Document, StringField, DictField, ReferenceField
 import uuid
+import datetime
 
 # Predefined data and widget types
 PREDEFINED_COMPONENT_TYPES = {
-    "int": 0,
-    "str": "",
-    "bool": True,
+    "int": {"item": 0},
+    "str": {"item": ""},
+    "bool": {"item": False},
+    "date": {"item": datetime.datetime.now().isoformat()},
     "Array_type": {"items": [], "type": ""},
     "Array_generic": {"items": []},
-    "GraphWidget": {"type": "graph", "data": []},
 }
 
 
@@ -26,20 +27,16 @@ class Component:
     def __init__(self, name, comp_type, data=None, id=None, host_subject=None, owner=None):
         self.name = name
         self.comp_type = comp_type
-        self.data = data or PREDEFINED_COMPONENT_TYPES.get(name, {})
+        self.data = data or PREDEFINED_COMPONENT_TYPES.get(comp_type, {})
         self.id = id or str(uuid.uuid4())
         self.host_subject = host_subject
         self.owner = owner
-
-    def is_widget(self):
-        """Check if the component is a widget based on predefined types."""
-        return isinstance(self.data, dict) and "type" in self.data
 
     def to_json(self):
         return {
             "name": self.name,
             "id": self.id,
-            "type": self.comp_type,
+            "comp_type": self.comp_type,
             "data": self.data,
             "host_subject": self.host_subject,
             "owner": self.owner
@@ -93,7 +90,7 @@ class Component:
                 "name": component_db.name,
                 "id": component_db.id,
                 "data": component_db.data,
-                "type": component_db.comp_type,
+                "comp_type": component_db.comp_type,
                 "host_subject": component_db.host_subject,
                 "owner": component_db.owner
             })

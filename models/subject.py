@@ -2,8 +2,10 @@ from .component import Component_db, Component, PREDEFINED_COMPONENT_TYPES
 import uuid
 from mongoengine import Document, StringField, DictField, ReferenceField, ListField, NULLIFY
 from mongoengine.errors import DoesNotExist
+from .templets import TEMPLATES
 
 
+# use the Subject_db class to interact with the database directly without the helper
 class Subject_db(Document):
     id = StringField(primary_key=True)
     name = StringField(required=True)
@@ -15,6 +17,7 @@ class Subject_db(Document):
     meta = {'collection': 'subjects'}
 
 
+# Subject class helper to interact with the database
 class Subject:
     def __init__(self, name, owner, template="", components=None, id=None):
         self.id = id or str(uuid.uuid4())
@@ -23,14 +26,17 @@ class Subject:
         self.template = template
         self.components = components or []
 
-    def add_component(self, component_name,  component_type):
+    async def add_component(self, component_name,  component_type, data=None):
         if component_type in PREDEFINED_COMPONENT_TYPES:
             component = Component(name=component_name,
-                                  comp_type=component_type)
+                                  host_subject=self.id,
+                                  owner=self.owner,
+                                  comp_type=component_type, data=data)
             component.host_subject = self.id
             component.save_to_db()
             # add a reference to the component in the subject if saved
             self.components.append(component.id)
+            self.save_to_db()
         else:
             print(f"Component type '{component_type}' is not defined.")
         return component
@@ -44,6 +50,11 @@ class Subject:
             "name": self.name,
             "components": self.components
         }
+
+    async def apply_template(self, template):
+        self.template = template
+        for comp in TEMPLATES[template]["components"]:
+            await self.add_component(comp["name"], comp["type"], comp["data"])
 
     @staticmethod
     def from_json(data):

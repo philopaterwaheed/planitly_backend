@@ -101,7 +101,7 @@ async def home():
 
 @app.get("/time")
 async def get_time():
-    return {"time": datetime.now(UTC).isoformat()}
+    return {"time": datetime.now(UTC).isoformat().replace("+00:00", "Z") , "utc": datetime.now(UTC).isoformat()}
 
 def run_server():
     """Run FastAPI server."""
