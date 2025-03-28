@@ -6,6 +6,7 @@ from mongoengine.errors import DoesNotExist
 from pytz import UTC
 from models import User, Component, Subject, Subject_db, DataTransfer, DataTransfer_db, Connection_db, Connection
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from routes import subjects, components, auth, dataTransfers, connection
 
 
@@ -102,6 +103,10 @@ async def home():
 @app.get("/time")
 async def get_time():
     return {"time": datetime.now(UTC).isoformat().replace("+00:00", "Z") , "utc": datetime.now(UTC).isoformat()}
+
+@app.get("/api-docs")
+async def get_docs():
+    return FileResponse("Docs/planitly_Api_docs.html")
 
 def run_server():
     """Run FastAPI server."""
