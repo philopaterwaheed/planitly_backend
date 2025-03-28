@@ -9,7 +9,8 @@ router = APIRouter(prefix="/connections", tags=["Connections"])
 @router.post("/", dependencies=[Depends(get_current_user)], status_code=status.HTTP_201_CREATED)
 async def create_connection(data: dict, current_user: User = Depends(get_current_user)):
     if 'source_subject' not in data or 'target_subject' not in data:
-        raise HTTPException(status_code=400, detail="Source and Target subjects are required")
+        raise HTTPException(
+            status_code=400, detail="Source and Target subjects are required")
 
     source_subject = Subject_db.objects(id=data["source_subject"]).first()
     target_subject = Subject_db.objects(id=data["target_subject"]).first()
@@ -21,7 +22,8 @@ async def create_connection(data: dict, current_user: User = Depends(get_current
         raise HTTPException(status_code=404, detail="Target subject not found")
 
     if 'type' not in data:
-        raise HTTPException(status_code=400, detail="Connection type is required")
+        raise HTTPException(
+            status_code=400, detail="Connection type is required")
 
     new_connection = Connection(
         source_subject=source_subject,
@@ -33,14 +35,29 @@ async def create_connection(data: dict, current_user: User = Depends(get_current
     )
 
     try:
-        new_connection.save()
+        for transfer in data.get("data_transfers", []):
+            source_component = Component_db.objects(
+                id=transfer["source_component"]).first()
+            target_component = Component_db.objects(
+                id=transfer["target_component"]).first()
+            if not source_component:
+                raise HTTPException(
+                    status_code=404, detail="Source component not found")
+            if not target_component:
+                raise HTTPException(
+                    status_code=404, detail="Target component not found")
+            await new_connection.add_data_transfer(
+                source_component, target_component, transfer["data_value"], transfer["operation"], transfer.get("details"))
+            new_connection.save()
 
-        source_subject.update(add_to_set__connections=new_connection.id)
-        target_subject.update(add_to_set__connections=new_connection.id)
+        # let me see if we need to keep them
+        """ source_subject.update(add_to_set__connections=new_connection.id) """
+        """ target_subject.update(add_to_set__connections=new_connection.id) """
 
         return new_connection.to_mongo()
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"An error occurred: {str(e)}")
 
 
 @router.get("/{connection_id}", status_code=status.HTTP_200_OK, dependencies=[Depends(get_current_user)])
@@ -66,18 +83,24 @@ async def delete_connection(connection_id: str, current_user: User = Depends(get
     try:
         connection = Connection_db.objects.get(id=connection_id)
         if str(current_user.id) == str(connection.owner) or current_user.admin:
-            source_subject = Subject_db.objects.get(id=connection.source_subject.id)
-            target_subject = Subject_db.objects.get(id=connection.target_subject.id)
+            source_subject = Subject_db.objects.get(
+                id=connection.source_subject.id)
+            target_subject = Subject_db.objects.get(
+                id=connection.target_subject.id)
 
-            source_subject.update(pull__connections=connection_id)
-            target_subject.update(pull__connections=connection_id)
+            # let me see if we need to keep them
+            """ source_subject.update(pull__connections=connection_id) """
+            """ target_subject.update(pull__connections=connection_id) """
 
             connection.delete()
             return {"message": "Connection deleted successfully", "id": connection_id}
 
-        raise HTTPException(status_code=403, detail="Not authorized to delete this connection")
+        raise HTTPException(
+            status_code=403, detail="Not authorized to delete this connection")
 
     except DoesNotExist:
-        raise HTTPException(status_code=404, detail="Connection or Subject not found")
+        raise HTTPException(
+            status_code=404, detail="Connection or Subject not found")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"An unexpected error occurred: {str(e)}")

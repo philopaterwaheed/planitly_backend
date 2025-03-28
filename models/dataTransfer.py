@@ -26,6 +26,7 @@ class DataTransfer_db(Document):
     details = DictField(null=True)
     owner = StringField(required=True)  # Store user ID
     meta = {'collection': 'data_transfers'}
+    # todo add host connection
 
 
 class DataTransfer:

@@ -20,22 +20,21 @@ class Connection_db(Document):
 
 
 class Connection:
-    def __init__(self, source_subject, target_subject, con_type, id=None, owner=None, start_date=None, end_date=None):
+    def __init__(self, source_subject, target_subject, con_type, data_transfers=None, id=None, owner=None, start_date=None, end_date=None):
         self.id = id or str(uuid.uuid4())
         self.source_subject = source_subject
         self.target_subject = target_subject
         self.type = con_type
-        data_transfers = {}
+        data_transfers = data_transfers or {}
         self.owner = owner or source_subject.owner
         self.start_date = start_date or None
         self.end_date = end_date or None
 
-    def add_data_tranfer(self, data_transfer_id):
-        if data_transfer_id not in self.data_transfers:
-            self.data_transfers[data_transfer_id] = DataTransfer.load_from_db(
-                data_transfer_id)
-            return True
-        return False
+    async def add_data_tranfer(self, source_component, target_component, data_value, operation, details=None):
+        data_transfer = DataTransfer(source_component=source_component, target_component=target_component,
+                                     data_value=data_value, operation=operation, details=details, owner=self.owner, schedule_time=self.end_date)
+        data_transfer.save_to_db()
+        self.data_transfers[data_transfer.id] = data_transfer
 
     def to_json(self):
         return {
