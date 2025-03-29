@@ -6,8 +6,9 @@ from datetime import datetime
 
 ACCEPTED_OPERATIONS = {
 
-    "int": ["replace", "add", "subtract", "multiply"],
+    "int": ["replace", "add", "multiply"],
     "str": ["replace"],
+    "date": ["replace"],
     "bool": ["replace", "toggle"],
     "Array_type": ["replace", "append", "remove_back", "remove_front", "delete_at", "push_at"],
     "Array_generic": ["replace", "append", "remove_back", "remove_front", "delete_at", "push_at"],
@@ -30,7 +31,7 @@ class DataTransfer_db(Document):
 
 
 class DataTransfer:
-    def __init__(self, id=None, source_component=None, target_component=None, data_value=None, operation="replace", details=None, schedule_time=None):
+    def __init__(self, id=None, source_component=None, target_component=None, data_value=None, operation="replace", owner=None, details=None, schedule_time=None):
         self.id = id or str(uuid.uuid4())
         self.source_component = source_component
         self.target_component = target_component
@@ -38,6 +39,8 @@ class DataTransfer:
         self.operation = operation
         self.schedule_time = schedule_time
         self.details = details or {}
+        self.details["done"] = False
+        self.owner = owner
         self.timestamp = datetime.now(UTC).isoformat()
 
     def execute(self):
@@ -92,12 +95,8 @@ class DataTransfer:
                     target_data = source_value
                 elif self.operation == "add" and isinstance(source_value, (int, float)) and isinstance(target_data, (int, float)):
                     target_data += source_value
-                elif self.operation == "subtract" and isinstance(source_value, (int, float)) and isinstance(target_data, (int, float)):
-                    target_data -= source_value
                 elif self.operation == "multiply" and isinstance(source_value, (int, float)) and isinstance(target_data, (int, float)):
                     target_data *= source_value
-                elif self.operation == "subtract" and isinstance(source_value, (int, float)) and isinstance(target_data, (int, float)):
-                    target_data -= source_value
                 elif self.operation == "toggle" and isinstance(target_data, bool):
                     target_data = not target_data
                 elif self.operation == "append" and isinstance(target_data, list) and (target_component.comp_type == "Array_generic" or type(source_value).__name__ == target_component.data["type"]):
@@ -148,7 +147,8 @@ class DataTransfer:
             "operation": self.operation,
             "schedule_time": self.schedule_time.isoformat() if self.schedule_time else None,
             "details": self.details,
-            "timestamp": self.timestamp
+            "timestamp": self.timestamp,
+            "owner": self.owner
         }
 
     @staticmethod
@@ -161,7 +161,8 @@ class DataTransfer:
             operation=data.get("operation"),
             details=data.get("details"),
             schedule_time=datetime.fromisoformat(
-                data["schedule_time"]) if data.get("schedule_time") else None
+                data["schedule_time"]) if data.get("schedule_time") else None,
+            owner=data.get("owner")
         )
 
     def save_to_db(self):
@@ -172,7 +173,8 @@ class DataTransfer:
             data_value=self.data_value,
             operation=self.operation,
             schedule_time=self.schedule_time,
-            details=self.details
+            details=self.details,
+            owner=self.owner
         )
         data_transfer_db.save()
 
@@ -187,6 +189,7 @@ class DataTransfer:
                 data_value=data_transfer_db.data_value,
                 operation=data_transfer_db.operation,
                 details=data_transfer_db.details,
-                schedule_time=data_transfer_db.schedule_time
+                schedule_time=data_transfer_db.schedule_time,
+                owner=data_transfer_db.owner
             )
         return None

@@ -13,15 +13,25 @@ router = APIRouter(prefix="/datatransfers", tags=["DataTransfer"])
 async def create_data_transfer(data: dict, current_user: User = Depends(get_current_user)):
     try:
         data_id = data.get('id', str(uuid.uuid4()))
+        source_component_id = data.get('source_component') or 1
+        target_component_id = data.get('target_component') or 1
+
+        if not target_component_id:
+            raise HTTPException(  # Check if the target component is provided
+                status_code=400, detail="Target component is required")
         source_component = Component_db.objects(
-            id=data.get('source_component')).first()
+            id=source_component_id).first() or None
         target_component = Component_db.objects(
-            id=data.get('target_component')).first()
+            id=target_component_id).first() or None
 
         if not target_component:
             raise HTTPException(
                 status_code=404, detail="Target component not found")
-        if (current_user.id != source_component.owner and current_user.id != target_component.owner) or not current_user.admin:
+        # spearate the if statements to avoid the error of accessing the owner attribute of None
+        if source_component and current_user.id != source_component.owner:
+            raise HTTPException(
+                status_code=403, detail="Not authorized to create this data transfer")
+        if (current_user.id != target_component.owner) or not current_user.admin:
             raise HTTPException(
                 status_code=403, detail="Not authorized to create this data transfer")
 
@@ -36,16 +46,19 @@ async def create_data_transfer(data: dict, current_user: User = Depends(get_curr
 
         data_transfer = DataTransfer(
             id=data_id,
-            source_component=source_component,
-            target_component=target_component,
+            source_component=source_component.id if source_component else None,
+            target_component=target_component.id,
             data_value=data.get("data_value"),
             operation=data.get("operation"),
             schedule_time=schedule_time,
-            details=data.get("details")
+            details=data.get("details"),
+            owner = current_user.id
         )
 
         if schedule_time and datetime.now(timezone.utc) >= schedule_time:
             if data_transfer.execute():
+                data_transfer.details["done"] = True
+                data_transfer.save_to_db()
                 return {"message": "Data transfer executed immediately", "id": str(data_transfer.id)}
             raise HTTPException(
                 status_code=500, detail="Failed to execute data transfer")

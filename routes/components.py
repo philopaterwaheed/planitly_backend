@@ -8,29 +8,32 @@ router = APIRouter(prefix="/components", tags=["Components"])
 
 @router.post("/", dependencies=[Depends(get_current_user)], status_code=status.HTTP_201_CREATED)
 async def create_component(data: dict, current_user: User = Depends(get_current_user)):
-    # check if the component already exists
-    if 'id' in data and Component.load_from_db(data['id']):
-        raise HTTPException(
-            status_code=400, detail="Component with this ID already exists")
+    try:
+        # check if the component already exists
+        if 'id' in data and Component.load_from_db(data['id']):
+            raise HTTPException(
+                status_code=400, detail="Component with this ID already exists")
 
-    # check if the host subject id exists
-    if 'host_subject' not in data:
-        raise HTTPException(status_code=400, detail="Host subject is required")
+        # check if the host subject id exists
+        if 'host_subject' not in data:
+            raise HTTPException(status_code=400, detail="Host subject is required")
 
-    # check if the host subject exists
-    host_subject = Subject.load_from_db(data['host_subject'])
-    if not host_subject:
-        raise HTTPException(status_code=404, detail="Host subject not found")
+        # check if the host subject exists
+        host_subject = Subject.load_from_db(data['host_subject'])
+        if not host_subject:
+            raise HTTPException(status_code=404, detail="Host subject not found")
 
-    if 'comp_type' not in data:
-        raise HTTPException(
-            status_code=400, detail="Component type is required")
+        if 'comp_type' not in data:
+            raise HTTPException(
+                status_code=400, detail="Component type is required")
 
-    component = Component(**data, owner=current_user.id)
-    component.save_to_db()
-    host_subject.components.append(component.id)
-    host_subject.save_to_db()
-    return component.to_json()
+        component = Component(**data, owner=current_user.id)
+        component.save_to_db()
+        host_subject.components.append(component.id)
+        host_subject.save_to_db()
+        return component.to_json()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 @router.get("/{component_id}", status_code=status.HTTP_200_OK, dependencies=[Depends(get_current_user)])
 async def get_component_by_id(component_id: str):
