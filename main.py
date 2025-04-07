@@ -7,7 +7,7 @@ from pytz import UTC
 from models import User, Component, Subject, Subject_db, DataTransfer, DataTransfer_db, Connection_db, Connection
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
-from routes import subjects, components, auth, dataTransfers, connection
+from routes import subjects, components, auth, dataTransfers, connection, widget
 
 
 app = FastAPI(title="Planitly API")
@@ -120,6 +120,8 @@ app.include_router(components.router)
 app.include_router(auth.router)
 app.include_router(connection.router)
 app.include_router(dataTransfers.router)
+app.include_router(widget.router)
+
 
 if __name__ == "__main__":
     manager.load_all_subjects()
