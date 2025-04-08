@@ -21,14 +21,14 @@ async def create_connection(data: dict, current_user: User = Depends(get_current
     if not target_subject:
         raise HTTPException(status_code=404, detail="Target subject not found")
 
-    if 'type' not in data:
+    if 'con_type' not in data:
         raise HTTPException(
             status_code=400, detail="Connection type is required")
 
     new_connection = Connection(
         source_subject=source_subject,
         target_subject=target_subject,
-        con_type=data["type"],
+        con_type=data["con_type"],
         owner=current_user.id,
         start_date=data.get("start_date"),
         end_date=data.get("end_date")
@@ -48,16 +48,18 @@ async def create_connection(data: dict, current_user: User = Depends(get_current
                     status_code=404, detail="Target component not found")
             await new_connection.add_data_transfer(
                 source_component, target_component, transfer["data_value"], transfer["operation"], transfer.get("details"))
-            new_connection.save()
+            new_connection.save_to_db()
 
         # let me see if we need to keep them
         """ source_subject.update(add_to_set__connections=new_connection.id) """
         """ target_subject.update(add_to_set__connections=new_connection.id) """
 
-        return new_connection.to_mongo()
-    except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"An error occurred: {str(e)}")
+        return new_connection.to_json()
+    finally:
+        pass
+    """ except Exception as e: """
+    """     raise HTTPException( """
+    """         status_code=500, detail=f"An error occurred: {str(e)}") """
 
 
 @router.get("/{connection_id}", status_code=status.HTTP_200_OK, dependencies=[Depends(get_current_user)])

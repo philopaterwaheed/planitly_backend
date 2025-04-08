@@ -2,56 +2,71 @@ from .component import Component, PREDEFINED_COMPONENT_TYPES
 from .subject import Subject, Subject_db
 from .dataTransfer import DataTransfer_db, DataTransfer
 import uuid
-from mongoengine import Document, StringField, DictField, ReferenceField, ListField, DateTimeField, NULLIFY
+from mongoengine import Document, StringField, DictField, ReferenceField, ListField, DateTimeField, NULLIFY, BooleanField
 from mongoengine.errors import DoesNotExist
+from datetime import datetime
 
 
 class Connection_db(Document):
     id = StringField(primary_key=True)
     source_subject = ReferenceField(Subject_db, required=True)
     target_subject = ReferenceField(Subject_db, required=True)
-    type = StringField(required=True)
-    data_tarnsfers = ListField(ReferenceField(
+    con_type = StringField(required=True)
+    data_transfers = ListField(ReferenceField(
         DataTransfer_db, reverse_delete_rule=NULLIFY))
     owner = StringField(required=True)  # Store user ID
-    start_date = DateTimeField()
-    end_date = DateTimeField()
+    start_date = DateTimeField(required=True)
+    end_date = DateTimeField(required=True)
+    done = BooleanField(default=False, required=True)
     meta = {'collection': 'connections'}
 
 
+def parse_date(date_str):
+    if isinstance(date_str, str) and date_str:  # Ensure the date_str is a valid string
+        try:
+            # Replace 'Z' with '+00:00' to handle UTC time format (e.g., 2023-03-31T12:00:00Z)
+            return datetime.fromisoformat(date_str.replace("Z", "+00:00"))
+        except ValueError as e:
+            print(f"Error parsing date '{date_str}': {e}")
+            return None
+    return None  # Return None if the date_str is not valid
+
+
 class Connection:
-    def __init__(self, source_subject, target_subject, con_type, data_transfers=None, id=None, owner=None, start_date=None, end_date=None):
+    def __init__(self, source_subject, target_subject, con_type, data_transfers=None, id=None, owner=None, start_date="", end_date="", done=None):
         self.id = id or str(uuid.uuid4())
         self.source_subject = source_subject
         self.target_subject = target_subject
-        self.type = con_type
-        data_transfers = data_transfers or {}
+        self.con_type = con_type
+        self.data_transfers = data_transfers or []
         self.owner = owner or source_subject.owner
-        self.start_date = start_date or None
-        self.end_date = end_date or None
+        print(type(start_date))
+        self.start_date = parse_date(start_date) or datetime.now()
+        self.end_date = parse_date(end_date) or datetime.now()
+        self.done = done or False
 
-    async def add_data_tranfer(self, source_component, target_component, data_value, operation, details=None):
+    async def add_data_transfer(self, source_component, target_component, data_value, operation, details=None):
         data_transfer = DataTransfer(source_component=source_component, target_component=target_component,
                                      data_value=data_value, operation=operation, details=details, owner=self.owner, schedule_time=self.end_date)
-        data_transfer.save_to_db()
-        self.data_transfers[data_transfer.id] = data_transfer
+        self.data_transfers.append(data_transfer.id)
 
     def to_json(self):
         return {
             "id": self.id,
             "source_subject": self.source_subject.id,
             "target_subject": self.target_subject.id,
-            "type": self.type,
+            "con_type": self.con_type,
             "data_transfers": self.data_transfers,
             "owner": self.owner,
             "start_date": self.start_date,
-            "end_date": self.end_date
+            "end_date": self.end_date,
+            "done": self.done
         }
 
     @staticmethod
     def from_json(data):
         connection = Connection(id=data["id"], source_subject=data["source_subject"], target_subject=data["target_subject"],
-                                type=data["type"], owner=data["owner"], start_date=data["start_date"], end_date=data["end_date"])
+                                con_type=data["con_type"], owner=data["owner"], start_date=data["start_date"], end_date=data["end_date"], done=data["done"])
         for transfer_id in data["data_transfers"]:
             data_transfer = DataTransfer_db.objects(id=transfer_id).first()
             connection.data_transfers[transfer_id] = data_transfer
@@ -61,12 +76,12 @@ class Connection:
         connection_db = Connection_db(id=self.id,
                                       source_subject=self.source_subject,
                                       target_subject=self.target_subject,
-                                      type=self.type,
-                                      data_transfers=[
-                                          data_transfer.id for data_transfer in self.data_transfers.values()],
+                                      con_type=self.con_type,
+                                      data_transfers=self.data_transfers,
                                       owner=self.owner,
                                       start_date=self.start_date,
-                                      end_date=self.end_date)
+                                      end_date=self.end_date,
+                                      done=self.done)
         connection_db.save()
 
     @staticmethod
@@ -74,16 +89,18 @@ class Connection:
         try:
             connection_db = Connection_db .objects(id=id).first()
             if connection_db:
-                connection = Connection.from_json({
-                    "id": connection_db.id,
-                    "source_subject": connection_db.source_subject,
-                    "target_subject": connection_db.target_subject,
-                    "type": connection_db.type,
-                    "data_transfers": connection_db.data_transfers,
-                    "owner": connection_db.owner,
-                    "start_date": connection_db.start_date,
-                    "end_date": connection_db.end_date
-                })
+                print(type(connection_db.start_date))
+                connection = Connection(
+                    id=connection_db.id,
+                    source_subject=connection_db.source_subject,
+                    target_subject=connection_db.target_subject,
+                    con_type=connection_db.con_type,
+                    data_transfers=connection_db.data_transfers,
+                    owner=connection_db.owner,
+                    start_date=connection_db.start_date,
+                    end_date=connection_db.end_date,
+                    done=connection_db.done
+                )
                 return connection
             else:
                 print(f"Connection with ID {id} not found.")

@@ -4,13 +4,16 @@ from datetime import datetime
 from fastapi import FastAPI, Depends, HTTPException, status
 from mongoengine.errors import DoesNotExist
 from pytz import UTC
-from models import User, Component, Subject, Subject_db, DataTransfer, DataTransfer_db, Connection_db, Connection
+from models import User, Component, Subject, Subject_db, DataTransfer, DataTransfer_db, Connection_db, Connection, MONGO_HOST
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from routes import subjects, components, auth, dataTransfers, connection, widget
 import os
+from queue import Queue
+from mongoengine import connect, disconnect
 
 
+child_pids = []
 app = FastAPI(title="Planitly API")
 
 # CORS Middleware
@@ -23,78 +26,48 @@ app.add_middleware(
 )
 
 
-class SubjectManager:
-    _instance = None
-
-    def __new__(cls, *args, **kwargs):
-        if not cls._instance:
-            cls._instance = super(SubjectManager, cls).__new__(cls)
-        return cls._instance
-
+class PythonExecutor:
     def __init__(self):
-        if not hasattr(self, 'subjects'):
-            self.subjects = {}
-        if not hasattr(self, 'scheduled_transfers'):
-            self.scheduled_transfers = []
+        """Initialize executor with a thread-safe queue and a running flag."""
+        self.task_queue = Queue()
 
-    def create_subject(self, name):
-        subject = Subject(name)
-        self.subjects[subject.id] = subject
-        return subject
+    def fetch_and_execute(self, connection_db):
+        """Fetch expired connections and execute transfers in a loop."""
+        print("Executor started!")
+        while True:
+            try:
+                now = datetime.now(UTC)
+                print(f"Current time: {now.isoformat()}")
+                # Fetch expired connections
+                expired_connections = connection_db.objects.filter(
+                    end_date__lte=now)
 
-    def get_subject(self, id):
-        return self.subjects.get(id)
+                for conn in expired_connections:
+                    connection = Connection.load_from_db(conn.id)
+                    transfers = conn.data_transfers
+                    for transfer_id in transfers:
+                        print(transfer_id.id)
+                        transfer = DataTransfer.load_from_db(transfer_id.id)
+                        if not transfer:
+                            print(f"Transfer with ID {transfer_id.id} not found.")
+                            continue
+                        print(f"Executing data transfer: {transfer}")
+                        transfer.execute()  # Execute transfer
+                        transfer.save_to_db()  # Save transfer state
+                    connection.done = True
+                    connection.save_to_db()  # Save connection state
+            finally:
+                pass
 
-    def get_subject_by_name(self, name):
-        return next((subject for subject in self.subjects.values() if subject.name == name), None)
+            """ except Exception as e: """
+            """     print(f"Error occurred: {e}") """
+            # Handle exceptions as needed
 
-    def save_all_subjects(self):
-        for subject in self.subjects.values():
-            subject.save_to_db()
+            time.sleep(5)  # Check every 5 seconds
 
-    def get_component(self, comp_id):
-        for subject in self.subjects.values():
-            component = subject.get_component(comp_id)
-            if component:
-                return component
-        return None
-
-    def load_all_subjects(self):
-        subjects_db = Subject_db.objects.all()
-        for subject_db in subjects_db:
-            subject = Subject.load_from_db(subject_db.id)
-            if subject:
-                self.subjects[subject.id] = subject
-
-
-manager = SubjectManager()
-
-
-def time_tracker():
-    """Thread to keep track of the current time and execute scheduled transfers."""
-    while True:
-        current_time = datetime.now(UTC)
-        for transfer in manager.scheduled_transfers[:]:
-            if transfer.schedule_time and current_time >= transfer.schedule_time:
-                print(f"Executing scheduled transfer at {current_time}")
-                transfer.execute()
-                manager.scheduled_transfers.remove(
-                    transfer)  # Remove completed transfer
-        time.sleep(1)  # Check every second
-
-
-def execute_scheduled_transfers():
-    """Thread to execute data transfers based on schedule."""
-    while True:
-        current_time = datetime.now(UTC)
-        pending_transfers = [
-            t for t in manager.scheduled_transfers if t.schedule_time and current_time >= t.schedule_time]
-        for transfer in pending_transfers:
-            print(f"Executing scheduled transfer: {transfer}")
-            transfer.execute()
-            manager.scheduled_transfers.remove(
-                transfer)  # Remove executed transfer
-        time.sleep(1)  # Check every second
+    def start(self, connection_db):
+        self.fetch_and_execute(connection_db)
+        print("Executor fork iss done .")
 
 
 @app.get("/")
@@ -111,12 +84,36 @@ async def get_time():
 async def get_docs():
     return FileResponse("Docs/planitly_Api_docs.html")
 
+
 @app.on_event("startup")
 async def startup_event():
     pid1 = os.fork()
     if pid1 == 0:
-        print("hi")
+        # reloading the database
+        # to avoid the deadlock
+        # to be fork safe
+        disconnect()
+        if MONGO_HOST == "localhost":
+            connect(db="planitly", host="localhost", port=27017)
+        else:
+            connect(db="Cluster0", host=MONGO_HOST, port=27017)
+        PythonExecutor().start(Connection_db)
         os._exit(0)
+    else:
+        child_pids.append(pid1)
+        print(f"Child process {pid1} started for database connection.")
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    for pid in child_pids:
+        try:
+            os.kill(pid, 0)
+        except OSError:
+            print(f"Child process {pid} is not running.")
+        else:
+            os.kill(pid, 9)
+
 
 def run_server():
     """Run FastAPI server."""
