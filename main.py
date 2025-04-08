@@ -8,6 +8,7 @@ from models import User, Component, Subject, Subject_db, DataTransfer, DataTrans
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from routes import subjects, components, auth, dataTransfers, connection, widget
+import os
 
 
 app = FastAPI(title="Planitly API")
@@ -100,13 +101,22 @@ def execute_scheduled_transfers():
 async def home():
     return {"message": "Welcome to the Planitly API!"}
 
+
 @app.get("/time")
 async def get_time():
-    return {"time": datetime.now(UTC).isoformat().replace("+00:00", "Z") , "utc": datetime.now(UTC).isoformat()}
+    return {"time": datetime.now(UTC).isoformat().replace("+00:00", "Z"), "utc": datetime.now(UTC).isoformat()}
+
 
 @app.get("/api-docs")
 async def get_docs():
     return FileResponse("Docs/planitly_Api_docs.html")
+
+@app.on_event("startup")
+async def startup_event():
+    pid1 = os.fork()
+    if pid1 == 0:
+        print("hi")
+        os._exit(0)
 
 def run_server():
     """Run FastAPI server."""
@@ -124,14 +134,6 @@ app.include_router(widget.router)
 
 
 if __name__ == "__main__":
-    manager.load_all_subjects()
-
-    time_tracker_thread = threading.Thread(target=time_tracker, daemon=True)
-    execute_thread = threading.Thread(
-        target=execute_scheduled_transfers, daemon=True)
-
-    time_tracker_thread.start()
-    execute_thread.start()
     run_server()
 
     try:
