@@ -16,3 +16,4 @@ if MONGO_HOST == "localhost":
     connect(db="planitly", host="localhost", port=27017)
 else:
     connect(db="Cluster0", host=MONGO_HOST, port=27017)
+

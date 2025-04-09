@@ -8,12 +8,15 @@ from models import User, Component, Subject, Subject_db, DataTransfer, DataTrans
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from routes import subjects, components, auth, dataTransfers, connection, widget
+from utils import FilePriorityQueue
 import os
-from queue import Queue
 from mongoengine import connect, disconnect
+from pymongo.errors import PyMongoError
 
 
 child_pids = []
+connections_q = FilePriorityQueue(directory="connections")
+
 app = FastAPI(title="Planitly API")
 
 # CORS Middleware
@@ -25,50 +28,29 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+def listen_for_new_connections():
+    collection = Connection_db._get_collection()
+    try:
+        print("inserted")
+        with collection.watch([{"$match": {"operationType": "insert"}}]) as stream:
+            for change in stream:
+                connection_doc = change["fullDocument"]
+                print("New Connection Inserted:", connection_doc)
+                connections_q.push(connection_doc["end_date"] ,connection_doc["_id"])
+    except PyMongoError as e:
+        print("Change Stream Error:", e)
 
-class PythonExecutor:
-    def __init__(self):
-        """Initialize executor with a thread-safe queue and a running flag."""
-        self.task_queue = Queue()
-
-    def fetch_and_execute(self, connection_db):
-        """Fetch expired connections and execute transfers in a loop."""
-        print("Executor started!")
-        while True:
-            try:
-                now = datetime.now(UTC)
-                print(f"Current time: {now.isoformat()}")
-                # Fetch expired connections
-                expired_connections = connection_db.objects.filter(
-                    end_date__lte=now)
-
-                for conn in expired_connections:
-                    connection = Connection.load_from_db(conn.id)
-                    transfers = conn.data_transfers
-                    for transfer_id in transfers:
-                        print(transfer_id.id)
-                        transfer = DataTransfer.load_from_db(transfer_id.id)
-                        if not transfer:
-                            print(f"Transfer with ID {transfer_id.id} not found.")
-                            continue
-                        print(f"Executing data transfer: {transfer}")
-                        transfer.execute()  # Execute transfer
-                        transfer.save_to_db()  # Save transfer state
-                    connection.done = True
-                    connection.save_to_db()  # Save connection state
-            finally:
-                pass
-
-            """ except Exception as e: """
-            """     print(f"Error occurred: {e}") """
-            # Handle exceptions as needed
-
-            time.sleep(5)  # Check every 5 seconds
-
-    def start(self, connection_db):
-        self.fetch_and_execute(connection_db)
-        print("Executor fork iss done .")
-
+def execute_due_connections():
+    print("Executing due connections...")
+    #todo add try and catch
+    while connections_q.peek()[0] < datetime.now():
+        print ("Connections Queue:", connections_q.peek()[0] )
+        poped = connections_q.pop()
+        Connection.load_from_db(poped()[1])
+        """     print("Executing:", due_connection) """
+        """     print(connections_q.head()) """
+            # Your execution logic here
+    time.sleep(10)  # Wait a bit if nothing is ready
 
 @app.get("/")
 async def home():
@@ -97,7 +79,9 @@ async def startup_event():
             connect(db="planitly", host="localhost", port=27017)
         else:
             connect(db="Cluster0", host=MONGO_HOST, port=27017)
-        PythonExecutor().start(Connection_db)
+        threading.Thread(target=execute_due_connections, daemon=True).start()
+        # should be in this order because watch blocks 
+        listen_for_new_connections()
         os._exit(0)
     else:
         child_pids.append(pid1)
