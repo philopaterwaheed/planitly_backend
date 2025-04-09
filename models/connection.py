@@ -48,6 +48,7 @@ class Connection:
     async def add_data_transfer(self, source_component, target_component, data_value, operation, details=None):
         data_transfer = DataTransfer(source_component=source_component, target_component=target_component,
                                      data_value=data_value, operation=operation, details=details, owner=self.owner, schedule_time=self.end_date)
+        data_transfer.save_to_db()
         self.data_transfers.append(data_transfer.id)
 
     def to_json(self):
@@ -108,3 +109,19 @@ class Connection:
         except DoesNotExist:
             print(f"Connection with ID {id} does not exist.")
             return None
+
+    def execute(self):
+        try:
+            for data_transfer in self.data_transfers:
+                transfer = DataTransfer.load_from_db(data_transfer)
+                if transfer:
+                    transfer.execute()
+                else:
+                    print(f"Data transfer with ID {data_transfer} not found.")
+                    raise Exception(
+                        f"Data transfer with ID {data_transfer} not found.")
+            self.done = True
+            self.save_to_db()
+        except Exception as e:
+            print(f"Error executing connection: {e}")
+            raise e

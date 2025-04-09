@@ -28,6 +28,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 def listen_for_new_connections():
     collection = Connection_db._get_collection()
     try:
@@ -36,21 +37,39 @@ def listen_for_new_connections():
             for change in stream:
                 connection_doc = change["fullDocument"]
                 print("New Connection Inserted:", connection_doc)
-                connections_q.push(connection_doc["end_date"] ,connection_doc["_id"])
+                connections_q.push(
+                    connection_doc["end_date"], connection_doc["_id"])
     except PyMongoError as e:
         print("Change Stream Error:", e)
 
+
 def execute_due_connections():
     print("Executing due connections...")
-    #todo add try and catch
-    while connections_q.peek()[0] < datetime.now():
-        print ("Connections Queue:", connections_q.peek()[0] )
-        poped = connections_q.pop()
-        Connection.load_from_db(poped()[1])
-        """     print("Executing:", due_connection) """
-        """     print(connections_q.head()) """
-            # Your execution logic here
-    time.sleep(10)  # Wait a bit if nothing is ready
+    try:
+        connections = Connection_db.objects(done=False)
+        for conn in connections:
+            connections_q.push(conn.end_date, conn.id)
+        print("Connections Queue:", connections_q)
+        # todo add try and catch
+        while True:
+            try:
+                print("Connections Queue:", connections_q)
+                peeked = connections_q.peek()
+                if peeked[0] < datetime.now():
+                    poped = connections_q.pop()
+                    print("Connections Queue:", poped)
+                    Connection.load_from_db(poped[1]).execute()
+                else:
+                    pass
+            except Exception as e:
+                print("Error executing connections:", e)
+                time.sleep(10)  # Wait a bit if nothing is ready
+
+            time.sleep(10)  # Wait a bit if nothing is ready
+
+    except Exception as e:
+        print("Error executing connections:", e)
+
 
 @app.get("/")
 async def home():
@@ -80,7 +99,7 @@ async def startup_event():
         else:
             connect(db="Cluster0", host=MONGO_HOST, port=27017)
         threading.Thread(target=execute_due_connections, daemon=True).start()
-        # should be in this order because watch blocks 
+        # should be in this order because watch blocks
         listen_for_new_connections()
         os._exit(0)
     else:
