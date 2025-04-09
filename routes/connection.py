@@ -36,13 +36,11 @@ async def create_connection(data: dict, current_user: User = Depends(get_current
 
     try:
         for transfer in data.get("data_transfers", []):
+            source_id = transfer.get("source_component") or 0
             source_component = Component_db.objects(
-                id=transfer["source_component"]).first()
+                id=source_id).first()
             target_component = Component_db.objects(
                 id=transfer["target_component"]).first()
-            if not source_component:
-                raise HTTPException(
-                    status_code=404, detail="Source component not found")
             if not target_component:
                 raise HTTPException(
                     status_code=404, detail="Target component not found")

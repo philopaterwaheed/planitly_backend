@@ -44,6 +44,8 @@ class DataTransfer:
         self.timestamp = datetime.now(UTC).isoformat()
 
     def execute(self):
+        if self.details.get("done"):
+            return
         source_component = target_component = None
         if self.source_component:
             source_component = Component_db.objects(
@@ -130,8 +132,11 @@ class DataTransfer:
                     target_component.data["item"] = target_data
                 else:
                     target_component.data["items"] = target_data
+
+                self.details = {**(self.details or {}), "done": True}
                 target_component.save()
-                self.details["done"] = True
+                self.save_to_db()
+                print(f"Data transfer executed: {self.operation} on {target_component.id} with value {target_data}")
                 return True
             else:
                 print(f"Source data not available for operation '{
@@ -181,11 +186,12 @@ class DataTransfer:
     @staticmethod
     def load_from_db(transfer_id):
         data_transfer_db = DataTransfer_db.objects(id=transfer_id).first()
+        source_component_id = data_transfer_db.source_component.id if data_transfer_db.source_component else None
         if data_transfer_db:
             return DataTransfer(
                 id=data_transfer_db.id,
-                source_component=data_transfer_db.source_component,
-                target_component=data_transfer_db.target_component,
+                source_component=source_component_id,
+                target_component=data_transfer_db.target_component.id,
                 data_value=data_transfer_db.data_value,
                 operation=data_transfer_db.operation,
                 details=data_transfer_db.details,

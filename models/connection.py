@@ -74,16 +74,21 @@ class Connection:
         return connection
 
     def save_to_db(self):
-        connection_db = Connection_db(id=self.id,
-                                      source_subject=self.source_subject,
-                                      target_subject=self.target_subject,
-                                      con_type=self.con_type,
-                                      data_transfers=self.data_transfers,
-                                      owner=self.owner,
-                                      start_date=self.start_date,
-                                      end_date=self.end_date,
-                                      done=self.done)
-        connection_db.save()
+        try:
+            connection_db = Connection_db(id=self.id,
+                                          source_subject=self.source_subject,
+                                          target_subject=self.target_subject,
+                                          con_type=self.con_type,
+                                          data_transfers=self.data_transfers,
+                                          owner=self.owner,
+                                          start_date=self.start_date,
+                                          end_date=self.end_date,
+                                          done=self.done)
+            connection_db.save()
+        except Exception as e:
+            print(f"Error saving connection with ID {
+                  self.id} to the database.")
+            raise e
 
     @staticmethod
     def load_from_db(id):
@@ -112,10 +117,14 @@ class Connection:
 
     def execute(self):
         try:
+            if self.done:
+                return
             for data_transfer in self.data_transfers:
-                transfer = DataTransfer.load_from_db(data_transfer)
+                print(f"Executing data transfer with ID {data_transfer.id}")
+                transfer = DataTransfer.load_from_db(data_transfer.id)
                 if transfer:
-                    transfer.execute()
+                    if transfer.execute():
+                        print(f"Data transfer with ID {data_transfer.id} executed successfully from connection.")
                 else:
                     print(f"Data transfer with ID {data_transfer} not found.")
                     raise Exception(
@@ -123,5 +132,4 @@ class Connection:
             self.done = True
             self.save_to_db()
         except Exception as e:
-            print(f"Error executing connection: {e}")
-            raise e
+            print(f"Error executing connection with ID {self.id}: {e}")

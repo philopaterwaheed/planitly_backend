@@ -15,7 +15,7 @@ from pymongo.errors import PyMongoError
 
 
 child_pids = []
-connections_q = FilePriorityQueue(directory="connections")
+connections_q = FilePriorityQueue(directory="connections_q")
 
 app = FastAPI(title="Planitly API")
 
@@ -49,18 +49,20 @@ def execute_due_connections():
         connections = Connection_db.objects(done=False)
         for conn in connections:
             connections_q.push(conn.end_date, conn.id)
-        print("Connections Queue:", connections_q)
         # todo add try and catch
         while True:
             try:
-                print("Connections Queue:", connections_q)
-                peeked = connections_q.peek()
-                if peeked[0] < datetime.now():
-                    poped = connections_q.pop()
-                    print("Connections Queue:", poped)
-                    Connection.load_from_db(poped[1]).execute()
+                if connections_q.size() > 0:
+                    peeked = connections_q.peek()
+                    if peeked[0] < datetime.now():
+                        print("peeked")
+                        poped = connections_q.pop()
+                        print("Connections Queue:", poped)
+                        Connection.load_from_db(poped[1]).execute()
+                    else:
+                        time.sleep(10)  # Wait a bit if nothing is ready
                 else:
-                    pass
+                    time.sleep(10)  # Wait a bit if nothing is ready
             except Exception as e:
                 print("Error executing connections:", e)
                 time.sleep(10)  # Wait a bit if nothing is ready
