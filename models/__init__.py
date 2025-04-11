@@ -4,6 +4,7 @@ from .subject import Subject_db, Subject
 from .component import Component_db, Component
 from .connection import Connection_db, Connection
 from .widget import Widget, Widget_db
+from .todos import Todo_db, Todo
 from mongoengine import connect
 from dotenv import load_dotenv
 import os

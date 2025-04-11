@@ -4,14 +4,13 @@ from datetime import datetime
 from mongoengine import Document, StringField, DictField, ReferenceField, NULLIFY, DateTimeField
 from mongoengine.errors import DoesNotExist, ValidationError
 from .component import Component_db
-from .subject import Subject_db
 
 
 class Widget_db(Document):
     id = StringField(primary_key=True)
     type = StringField(required=True)
     host_subject = ReferenceField(
-        Subject_db, reverse_delete_rule=NULLIFY, required=True)
+        "Subject_db", required=True)
     data = DictField(null=True)
     reference_component = ReferenceField(
         Component_db, reverse_delete_rule=NULLIFY)

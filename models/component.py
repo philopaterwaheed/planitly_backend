@@ -1,4 +1,4 @@
-from mongoengine import Document, StringField, DictField, ReferenceField
+from mongoengine import Document, StringField, DictField, ReferenceField, ListField, NULLIFY, BooleanField
 import uuid
 import datetime
 
@@ -20,17 +20,19 @@ class Component_db(Document):
     data = DictField()
     comp_type = StringField(required=True)
     owner = StringField(required=True)  # Store user ID
+    is_deletable = BooleanField(default=True)
     meta = {'collection': 'components'}
 
 
 class Component:
-    def __init__(self, name, comp_type, data=None, id=None, host_subject=None, owner=None):
+    def __init__(self, name, comp_type, data=None, id=None, host_subject=None, owner=None, is_deletable=True):
         self.name = name
         self.comp_type = comp_type
         self.data = data or PREDEFINED_COMPONENT_TYPES.get(comp_type, {})
         self.id = id or str(uuid.uuid4())
         self.host_subject = host_subject
         self.owner = owner
+        self.is_deletable = is_deletable
 
     def to_json(self):
         return {
@@ -39,7 +41,8 @@ class Component:
             "comp_type": self.comp_type,
             "data": self.data,
             "host_subject": self.host_subject,
-            "owner": self.owner
+            "owner": self.owner,
+            "is_deletable": self.is_deletable
         }
 
     @staticmethod
@@ -50,7 +53,8 @@ class Component:
             id=data["id"],
             comp_type=data["type"],
             host_subject=data["host_subject"],
-            owner=data.get("owner")
+            owner=data.get("owner"),
+            is_deletable=data.get("is_deletable", True)
         )
 
     def save_to_db(self):
@@ -60,7 +64,8 @@ class Component:
             host_subject=self.host_subject,
             data=self.data,
             comp_type=self.comp_type,
-            owner=self.owner
+            owner=self.owner,
+            is_deletable=self.is_deletable
         )
         component_db.save()
 
@@ -92,6 +97,7 @@ class Component:
                 "data": component_db.data,
                 "comp_type": component_db.comp_type,
                 "host_subject": component_db.host_subject,
-                "owner": component_db.owner
+                "owner": component_db.owner,
+                "is_deletable": component_db.is_deletable
             })
         return None

@@ -65,7 +65,7 @@ async def get_all_subjects():
 
 @router.get("/user/{user_id}", status_code=status.HTTP_200_OK)
 async def get_user_subjects(user_id: str, current_user=Depends(get_current_user)):
-    try: 
+    try:
         """Retrieve subjects for a specific user."""
         if str(current_user.id) == user_id or current_user.admin:
             subjects = Subject_db.objects(owner=user_id)
@@ -102,11 +102,24 @@ async def delete_subject(subject_id: str, current_user=Depends(get_current_user)
     """Delete a subject and its associated components."""
     try:
         subject = Subject_db.objects.get(id=subject_id)
+        # Check if subject exists
+        if not subject:
+            raise HTTPException(
+                status_code=404, detail="Subject not found")
+
+        # Check if subject is deletable
+        if not subject.is_deletable:
+            raise HTTPException(
+                status_code=403, detail="This subject cannot be deleted")
+
         if str(current_user.id) == str(subject.owner) or current_user.admin:
             for comp in subject.components:
                 comp.delete()
             subject.delete()
             return {"message": f"Subject and associated components with ID {subject_id} deleted successfully."}
+        else:
+            raise HTTPException(
+                status_code=403, detail="Not authorized to delete this subject")
         raise HTTPException(
             status_code=403, detail="Not authorized to delete this subject")
     except DoesNotExist:

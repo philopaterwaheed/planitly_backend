@@ -2,8 +2,7 @@
 # routers/widget.py
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from datetime import datetime, timedelta
-from models import Widget_db, Widget, Component_db, User, Subject_db
-from models.todo import Todo_db, Todo
+from models import Widget_db, Widget, Component_db, User, Subject_db, Todo_db, Todo
 from mongoengine.errors import DoesNotExist, ValidationError
 from middleWares import get_current_user
 import uuid
