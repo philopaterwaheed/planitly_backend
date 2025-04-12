@@ -4,7 +4,7 @@ import re
 import datetime
 from mongoengine.errors import NotUniqueError, ValidationError
 from models import User, Subject, Component, Widget
-from middleWares import create_access_token, authenticate_user
+from middleWares import create_access_token, authenticate_user, get_current_user
 from models.templets import DEFAULT_USER_TEMPLATES
 
 
@@ -99,11 +99,13 @@ async def register(user_data: dict):
         }), 201
 
     except ValidationError:
-        return ({"message": "Invalid data", "status": "error"}), 400
+        raise HTTPException(
+            status_code=400, detail="Invalid data provided.")
     except NotUniqueError:
-        return ({"message": "Username or Email already exist", "status": "error"}), 400
+        raise HTTPException(
+            status_code=400, detail="User with this email already exists.")
     except Exception as e:
-        return ({"error": str(e)}), 500
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/login", status_code=status.HTTP_200_OK)

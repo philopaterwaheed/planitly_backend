@@ -113,10 +113,12 @@ async def delete_subject(subject_id: str, current_user=Depends(get_current_user)
                 status_code=403, detail="This subject cannot be deleted")
 
         if str(current_user.id) == str(subject.owner) or current_user.admin:
+            for widget in subject.widgets:
+                widget.delete()
             for comp in subject.components:
                 comp.delete()
             subject.delete()
-            return {"message": f"Subject and associated components with ID {subject_id} deleted successfully."}
+            return {"message": f"Subject and associated components and widgets with ID {subject_id} deleted successfully."}
         else:
             raise HTTPException(
                 status_code=403, detail="Not authorized to delete this subject")

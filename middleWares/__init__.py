@@ -1,7 +1,7 @@
 from fastapi import Depends, HTTPException
 from datetime import datetime, timedelta
 from fastapi.security import OAuth2PasswordBearer
-from jose import JWTError, jwt  # Used for decoding JWT
+from jose import JWTError, ExpiredSignatureError, jwt  # Used for decoding JWT
 from models import User  # Your User model
 import os
 from dotenv import load_dotenv
@@ -32,6 +32,8 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
 
         return user  # Return user object for further use
 
+    except ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token has expired")
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid token")
 
