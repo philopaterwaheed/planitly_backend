@@ -11,13 +11,14 @@ from firebase_admin import auth as firebase_auth
 import requests
 from consts import env_variables
 from errors import FirebaseRegisterError
+from fire import initialize_firebase
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
 if env_variables["DEV"]:
     fire_url = "http://localhost:3000/api/node/firebase_register"
 else:
-    fire_url = "https://planitly-backend.vercel.app/firebase_register"
+    fire_url = "https://planitly-backend.vercel.app/api/node/firebase_register"
 
 
 async def node_firebase(email: str, password: str):

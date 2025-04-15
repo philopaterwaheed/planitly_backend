@@ -7,14 +7,12 @@ from datetime import datetime, timedelta
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, ExpiredSignatureError, jwt  # Used for decoding JWT
 from models import User, RateLimit
-import os
-from dotenv import load_dotenv
+from consts import env_variables
 from models.locks import is_account_locked, lock_account
 from firebase_admin import auth
 
-load_dotenv()
 # Get secret key from environment variables
-JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "supersecretkey")
+JWT_SECRET_KEY = env_variables.get("JWT_SECRET", "supersecretkey")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_DAYS = 30
 
@@ -127,58 +125,53 @@ async def authenticate_user(username_or_email: str, password: str, request: Requ
     ).first()
 
     if not user:
-        return None, "username or email not found"
+        return None, "Username or email not found"
 
     # Check if account is locked
-    is_locked = await is_account_locked(str(user.id))
-    if is_locked:
+    if await is_account_locked(str(user.id)):
         return None, "Account locked due to too many invalid attempts"
 
-    if user.check_password(password):
-        # Check email verification status
-        if not user.email_verified and user.firebase_uid:
-            try:
-                # Check Firebase for email verification status
-                firebase_user = auth.get_user(user.firebase_uid)
-                if firebase_user.email_verified:
-                    user.email_verified = True
-                    user.save()
-                else:
-                    return None, "Email not verified. Please check your inbox for verification link."
-            except auth.UserNotFoundError:
-                # If Firebase check fails, fall back to local verification
-                if not user.email_verified:
-                    return None, "Email not verified. Please check your inbox for verification link."
-    else:
-        return None, "Invalid password"
-
-        # Reset invalid attempts on successful login
-        user.invalid_attempts = 0
+    if not user.check_password(password):
+        # Increment invalid attempts on failure
+        user.invalid_attempts += 1
         user.save()
 
-        # Add device if request provided
-        if request:
-            device_id = get_device_identifier(request)
+        # Lock account if too many invalid attempts
+        if user.invalid_attempts >= 10:
+            await lock_account(str(user.id))
+
+        return None, "Invalid password"
+
+    # If password is correct
+    if not user.email_verified and user.firebase_uid:
+        try:
+            # Check Firebase for email verification status
+            firebase_user = auth.get_user(user.firebase_uid)
+            if firebase_user.email_verified:
+                user.email_verified = True
+                user.save()
+            else:
+                return None, "Email not verified. Please check your inbox for verification link."
+        except auth.UserNotFoundError:
+            if not user.email_verified:
+                return None, "Email not verified. Please check your inbox for verification link."
+
+    # Reset invalid attempts on successful login
+    user.invalid_attempts = 0
+
+    # Add device if request is provided
+    if request:
+        device_id = get_device_identifier(request)
+
+        if device_id not in user.devices:
             # Check if device limit reached
-            if device_id not in user.devices and len(user.devices) >= 5:
+            if len(user.devices) >= 5:
                 return None, "Maximum devices reached for this account"
 
-            # Add device if not already registered
-            if device_id not in user.devices:
-                user.devices.append(device_id)
-                user.save()
+            user.devices.append(device_id)
 
-        return user, None
-
-    # Increment invalid attempts on failure
-    user.invalid_attempts += 1
     user.save()
-
-    # Lock account if too many invalid attempts
-    if user.invalid_attempts >= 10:
-        await lock_account(str(user.id))
-
-    return None, "Invalid credentials"
+    return user, None
 
 
 async def verify_device(request: Request, current_user: User = Depends(get_current_user)):
