@@ -10,7 +10,7 @@ from models.templets import DEFAULT_USER_TEMPLATES
 from firebase_admin import auth as firebase_auth
 import requests
 from consts import env_variables
-from errors import FirebaseRegisterError , revert_firebase_user
+from errors import FirebaseRegisterError, revert_firebase_user
 from fire import initialize_firebase
 from firebase_admin import auth
 
@@ -141,8 +141,9 @@ async def register(user_data: dict, request: Request):
             return ({
                 "message": "User registered successfully",
                 "token": access_token,
-                "default_subjects_created": subjects_created
-            }), 201
+                "default_subjects_created": subjects_created,
+                "status_code": 201
+            })
         except FirebaseRegisterError as e:
             raise e
 
@@ -180,8 +181,9 @@ async def login_user(user_data: dict, request: Request):
         return ({
             "message": "Login successful",
             "token": access_token,
-            "email_verified": user.email_verified
-        }), 201
+            "email_verified": user.email_verified,
+            "status_code": 201
+        })
 
     except HTTPException as he:
         raise he

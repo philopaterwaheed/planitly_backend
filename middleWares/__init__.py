@@ -140,7 +140,7 @@ async def authenticate_user(username_or_email: str, password: str, request: Requ
         if user.invalid_attempts >= 10:
             await lock_account(str(user.id))
 
-        return None, "Invalid password"
+        return None, "Wrong password"
 
     # If password is correct
     if not user.email_verified and user.firebase_uid:
@@ -151,10 +151,10 @@ async def authenticate_user(username_or_email: str, password: str, request: Requ
                 user.email_verified = True
                 user.save()
             else:
-                return None, "Email not verified. Please check your inbox for verification link."
+                return None, "Email not verified, Please check your inbox for verification link."
         except auth.UserNotFoundError:
             if not user.email_verified:
-                return None, "Email not verified. Please check your inbox for verification link."
+                return None, "Email not verified, Please check your inbox for verification link."
 
     # Reset invalid attempts on successful login
     user.invalid_attempts = 0
