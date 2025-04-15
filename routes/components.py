@@ -1,14 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from models import Subject_db
-from middleWares import get_current_user, admin_required
+from middleWares import verify_device, admin_required
 from models import User, Component, Component_db, Subject, Subject_db, DataTransfer, DataTransfer_db
 from mongoengine.errors import DoesNotExist
 
 router = APIRouter(prefix="/components", tags=["Components"])
 
 
-@router.post("/", dependencies=[Depends(get_current_user)], status_code=status.HTTP_201_CREATED)
-async def create_component(data: dict, current_user: User = Depends(get_current_user)):
+@router.post("/", dependencies=[Depends(verify_device)], status_code=status.HTTP_201_CREATED)
+async def create_component(data: dict, current_user: User = Depends(verify_device)):
     try:
         # check if the component already exists
         if 'id' in data and Component.load_from_db(data['id']):
@@ -39,7 +39,7 @@ async def create_component(data: dict, current_user: User = Depends(get_current_
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.get("/{component_id}", status_code=status.HTTP_200_OK, dependencies=[Depends(get_current_user)])
+@router.get("/{component_id}", status_code=status.HTTP_200_OK, dependencies=[Depends(verify_device)])
 async def get_component_by_id(component_id: str):
     """Retrieve a component by its ID."""
     try:
@@ -49,7 +49,7 @@ async def get_component_by_id(component_id: str):
         raise HTTPException(status_code=404, detail="Component not found")
 
 
-@router.get("/", status_code=status.HTTP_200_OK, dependencies=[Depends(get_current_user), Depends(admin_required)])
+@router.get("/", status_code=status.HTTP_200_OK, dependencies=[Depends(verify_device), Depends(admin_required)])
 async def get_all_components():
     """Retrieve all components (Admin Only)."""
     components = Component_db.objects()
@@ -57,7 +57,7 @@ async def get_all_components():
 
 
 @router.delete("/{component_id}", status_code=status.HTTP_200_OK)
-async def delete_component(component_id: str, current_user=Depends(get_current_user)):
+async def delete_component(component_id: str, current_user=Depends(verify_device)):
     """Delete a component and remove it from its host subject."""
     try:
 

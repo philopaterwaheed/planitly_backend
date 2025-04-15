@@ -1,13 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from models import User, Component, Component_db, Subject, Subject_db, DataTransfer, DataTransfer_db, Connection_db, Connection
-from middleWares import get_current_user, admin_required
+from middleWares import verify_device, admin_required
 from mongoengine.errors import DoesNotExist
 
 router = APIRouter(prefix="/connections", tags=["Connections"])
 
 
-@router.post("/", dependencies=[Depends(get_current_user)], status_code=status.HTTP_201_CREATED)
-async def create_connection(data: dict, current_user: User = Depends(get_current_user)):
+@router.post("/", dependencies=[Depends(verify_device)], status_code=status.HTTP_201_CREATED)
+async def create_connection(data: dict, current_user: User = Depends(verify_device)):
     if 'source_subject' not in data or 'target_subject' not in data:
         raise HTTPException(
             status_code=400, detail="Source and Target subjects are required")
@@ -60,7 +60,7 @@ async def create_connection(data: dict, current_user: User = Depends(get_current
     """         status_code=500, detail=f"An error occurred: {str(e)}") """
 
 
-@router.get("/{connection_id}", status_code=status.HTTP_200_OK, dependencies=[Depends(get_current_user)])
+@router.get("/{connection_id}", status_code=status.HTTP_200_OK, dependencies=[Depends(verify_device)])
 async def get_connection_by_id(connection_id: str):
     """Retrieve a connection by its ID."""
     try:
@@ -70,7 +70,7 @@ async def get_connection_by_id(connection_id: str):
         raise HTTPException(status_code=404, detail="Connection not found")
 
 
-@router.get("/", status_code=status.HTTP_200_OK, dependencies=[Depends(get_current_user), Depends(admin_required)])
+@router.get("/", status_code=status.HTTP_200_OK, dependencies=[Depends(verify_device), Depends(admin_required)])
 async def get_all_connections():
     """Retrieve all connections (Admin Only)."""
     connections = Connection_db.objects()
@@ -78,7 +78,7 @@ async def get_all_connections():
 
 
 @router.delete("/{connection_id}", status_code=status.HTTP_200_OK)
-async def delete_connection(connection_id: str, current_user: User = Depends(get_current_user)):
+async def delete_connection(connection_id: str, current_user: User = Depends(verify_device)):
     """Delete a connection and remove it from the source and target subjects."""
     try:
         connection = Connection_db.objects.get(id=connection_id)

@@ -1,12 +1,13 @@
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, status, Request, Depends
 import uuid
 import re
 import datetime
 from mongoengine.errors import NotUniqueError, ValidationError
 from models import User, Subject, Component, Widget
-from middleWares import create_access_token, authenticate_user, get_current_user
+from middleWares import create_access_token, authenticate_user, get_current_user, check_rate_limit, get_device_identifier, admin_required, verify_device
 from models.templets import DEFAULT_USER_TEMPLATES
-
+from firebase_admin import auth as firebase_auth
+from fire import send_verification_email
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
@@ -66,8 +67,11 @@ async def create_default_subjects_for_user(user_id):
 
 
 @router.post("/register", status_code=status.HTTP_201_CREATED)
-async def register(user_data: dict):
-    """Register a new user."""
+async def register(user_data: dict, request: Request):
+    """Register a new user with device tracking."""
+    # todo add this to the get user
+    # First check rate limiting
+
     try:
         username = user_data.get("username")
         email = user_data.get("email")
@@ -77,57 +81,136 @@ async def register(user_data: dict):
             raise HTTPException(
                 status_code=400, detail="All fields are required.")
 
+        if not re.match(r"^(?=.*[a-zA-Z])[a-zA-Z0-9_.-]+$", username):
+            raise HTTPException(
+                status_code=400,
+                detail="Username must contain at least one letter and can only include letters, numbers, underscores, dots, and hyphens."
+            )
         if not re.match(r"^(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&^#_+=<>.,;:|\\/-])[A-Za-z\d@$!%*?&^#_+=<>.,;:|\\/-]{8,}$", password):
             raise HTTPException(
                 status_code=400, detail="Weak password. Must contain uppercase, number, and special character.")
+        try:
+            firebase_user = firebase_auth.create_user(
+                email=email, password=password, email_verified=False)
+            verification_link = firebase_auth.generate_email_verification_link(
+                email)
+            send_verification_email(email)
+            user = User(id=str(uuid.uuid4()), firebase_uid=firebase_user.uid, username=username,
+                        email=email, email_verified=False, password=password)
+            user.hash_password()
 
-        user = User(id=str(uuid.uuid4()), username=username,
-                    email=email, password=password)
-        user.hash_password()
-        user.save()
+            # Add the current device
+            device_id = get_device_identifier(request)
+            user.devices = [device_id]  # First device
 
-        # Create default subjects for the new user
-        subjects_created = await create_default_subjects_for_user(str(user.id))
+            user.save()
 
-        # Generate JWT token
-        access_token = await create_access_token(user_id=str(user.id))
+            # Create default subjects for the new user
+            subjects_created = await create_default_subjects_for_user(str(user.id))
 
-        return ({
-            "message": "User registered successfully",
-            "token": access_token,
-            "default_subjects_created": subjects_created
-        }), 201
+            # Generate JWT token
+            access_token = await create_access_token(user_id=str(user.id))
+
+            return ({
+                "message": "User registered successfully",
+                "token": access_token,
+                "default_subjects_created": subjects_created
+            }), 201
+        except firebase_auth.EmailAlreadyExistsError:
+            raise NotUniqueError()
 
     except ValidationError:
         raise HTTPException(
             status_code=400, detail="Invalid data provided.")
     except NotUniqueError:
         raise HTTPException(
-            status_code=400, detail="User with this email already exists.")
+            status_code=400, detail="username or email already exists.")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/login", status_code=status.HTTP_200_OK)
-async def login_user(user_data: dict):
+async def login_user(user_data: dict, request: Request):
+
     try:
-        print(user_data)
-        email = user_data.get("email")
+        username_or_email = user_data.get("usernameOremail")
         password = user_data.get("password")
 
-        user = await authenticate_user(email, password)
+        user, error_message = await authenticate_user(username_or_email, password, request)
         if not user:
-            raise HTTPException(status_code=401, detail="Invalid credentials")
+            raise HTTPException(
+                status_code=401, detail=error_message)
 
         # Generate JWT token
-        access_token = await create_access_token(
-            str(user.id)
-        )
+        access_token = await create_access_token(str(user.id))
 
         return ({
             "message": "Login successful",
-            "token": access_token
-        }), 200
+            "token": access_token,
+            "email_verified": user.email_verified
+        }), 201
 
+    except HTTPException as he:
+        raise he
     except Exception as e:
         raise HTTPException(detail={"error": str(e)}, status_code=500)
+
+
+@router.post("/logout-device", status_code=status.HTTP_200_OK)
+async def logout_device(device_data: dict, current_user: User = Depends(get_current_user)):
+    """Logout from a specific device"""
+    try:
+        device_id = device_data.get("device_id")
+        if not device_id:
+            raise HTTPException(
+                status_code=400, detail="Device ID is required")
+
+        success = current_user.remove_device(device_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="Device not found")
+
+        return {"message": "Device logged out successfully"}
+
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/reset-security", status_code=status.HTTP_200_OK)
+async def reset_security(current_user: User = Depends(verify_device)):
+    """Reset security settings for a user (clear invalid attempts)"""
+    try:
+        current_user.reset_invalid_attempts()
+        return {"message": "Security settings reset successfully"}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/devices", status_code=status.HTTP_200_OK)
+async def get_devices(current_user: User = Depends(get_current_user)):
+    """Get all registered devices for the user"""
+    try:
+        return {"devices": current_user.devices}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/clear-devices", status_code=status.HTTP_200_OK)
+async def clear_all_devices(request: Request, current_user: User = Depends(get_current_user)):
+    """Clear all registered devices except the current one"""
+    try:
+        # Keep only the current device
+        current_device = get_device_identifier(request)
+        if current_device in current_user.devices:
+            current_user.devices = [current_device]
+        else:
+            current_user.devices = []
+
+        current_user.save()
+        return {"message": "All other devices have been logged out"}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

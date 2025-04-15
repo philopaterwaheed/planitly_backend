@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from models import Subject_db
-from middleWares import get_current_user, admin_required
+from middleWares import verify_device, admin_required
 from models import User, Component, Component_db, Subject, Subject_db, DataTransfer, DataTransfer_db
 from mongoengine.queryset.visitor import Q
 from mongoengine.errors import DoesNotExist, ValidationError
@@ -8,8 +8,8 @@ from mongoengine.errors import DoesNotExist, ValidationError
 router = APIRouter(prefix="/subjects", tags=["Subjects"])
 
 
-@router.post("/", dependencies=[Depends(get_current_user)], status_code=status.HTTP_201_CREATED)
-async def create_subject(data: dict, current_user: User = Depends(get_current_user)):
+@router.post("/", dependencies=[Depends(verify_device)], status_code=status.HTTP_201_CREATED)
+async def create_subject(data: dict, current_user: User = Depends(verify_device)):
     # for if the user didn't create an id himself
     try:
         sub_id = data.get("id") or 0
@@ -38,7 +38,7 @@ async def create_subject(data: dict, current_user: User = Depends(get_current_us
             status_code=500, detail=f"An unexpected error occurred: {str(e)}")
 
 
-@router.get("/{subject_id}", status_code=status.HTTP_200_OK, dependencies=[Depends(get_current_user)])
+@router.get("/{subject_id}", status_code=status.HTTP_200_OK, dependencies=[Depends(verify_device)])
 async def get_subject(subject_id: str):
     """Retrieve a subject by its ID."""
     try:
@@ -49,7 +49,7 @@ async def get_subject(subject_id: str):
 
 
 # get all subjects route
-@router.get("/", dependencies=[Depends(get_current_user), Depends(admin_required)], status_code=status.HTTP_200_OK)
+@router.get("/", dependencies=[Depends(verify_device), Depends(admin_required)], status_code=status.HTTP_200_OK)
 async def get_all_subjects():
     try:
         """Retrieve all subjects (Admin Only)."""
@@ -64,7 +64,7 @@ async def get_all_subjects():
 
 
 @router.get("/user/{user_id}", status_code=status.HTTP_200_OK)
-async def get_user_subjects(user_id: str, current_user=Depends(get_current_user)):
+async def get_user_subjects(user_id: str, current_user=Depends(verify_device)):
     try:
         """Retrieve subjects for a specific user."""
         if str(current_user.id) == user_id or current_user.admin:
@@ -78,7 +78,7 @@ async def get_user_subjects(user_id: str, current_user=Depends(get_current_user)
 
 
 @router.put("/{subject_id}", status_code=status.HTTP_200_OK)
-async def update_subject(subject_id: str, data: dict, current_user=Depends(get_current_user)):
+async def update_subject(subject_id: str, data: dict, current_user=Depends(verify_device)):
     """Update a subject by its ID."""
     try:
         subject = Subject_db.objects.get(id=subject_id)
@@ -98,7 +98,7 @@ async def update_subject(subject_id: str, data: dict, current_user=Depends(get_c
 
 
 @router.delete("/{subject_id}", status_code=status.HTTP_200_OK)
-async def delete_subject(subject_id: str, current_user=Depends(get_current_user)):
+async def delete_subject(subject_id: str, current_user=Depends(verify_device)):
     """Delete a subject and its associated components."""
     try:
         subject = Subject_db.objects.get(id=subject_id)

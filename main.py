@@ -13,6 +13,7 @@ import os
 import logging
 from mongoengine import connect, disconnect
 from pymongo.errors import PyMongoError
+from fire import initialize_firebase # just for the sake of connecting to firebase
 
 # Set up logging
 logging.basicConfig(level=logging.INFO,

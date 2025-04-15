@@ -5,6 +5,8 @@ from .component import Component_db, Component
 from .connection import Connection_db, Connection
 from .widget import Widget, Widget_db
 from .todos import Todo_db, Todo
+from .locks import AccountLock
+from .rates import RateLimit
 from mongoengine import connect
 from dotenv import load_dotenv
 import os
@@ -17,4 +19,3 @@ if MONGO_HOST == "localhost":
     connect(db="planitly", host="localhost", port=27017)
 else:
     connect(db="Cluster0", host=MONGO_HOST, port=27017)
-

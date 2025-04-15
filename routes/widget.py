@@ -4,15 +4,15 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from datetime import datetime, timedelta
 from models import Widget_db, Widget, Component_db, User, Subject_db, Todo_db, Todo
 from mongoengine.errors import DoesNotExist, ValidationError
-from middleWares import get_current_user
+from middleWares import verify_device
 import uuid
 from typing import Optional
 
 router = APIRouter(prefix="/widgets", tags=["Widget"])
 
 
-@router.post("/", dependencies=[Depends(get_current_user)], status_code=status.HTTP_201_CREATED)
-async def create_widget(data: dict, current_user: User = Depends(get_current_user)):
+@router.post("/", dependencies=[Depends(verify_device)], status_code=status.HTTP_201_CREATED)
+async def create_widget(data: dict, current_user: User = Depends(verify_device)):
     try:
         data_id = data.get('id', str(uuid.uuid4()))
         widget_type = data.get('type')
@@ -87,8 +87,8 @@ async def create_widget(data: dict, current_user: User = Depends(get_current_use
         )
 
 
-@router.get("/{widget_id}", dependencies=[Depends(get_current_user)], status_code=status.HTTP_200_OK)
-async def get_widget(widget_id: str, current_user: User = Depends(get_current_user)):
+@router.get("/{widget_id}", dependencies=[Depends(verify_device)], status_code=status.HTTP_200_OK)
+async def get_widget(widget_id: str, current_user: User = Depends(verify_device)):
     try:
         widget = Widget_db.objects.get(id=widget_id)
         if widget.owner != current_user.id and not current_user.admin:
@@ -103,9 +103,9 @@ async def get_widget(widget_id: str, current_user: User = Depends(get_current_us
         )
 
 
-@router.get("/", dependencies=[Depends(get_current_user)], status_code=status.HTTP_200_OK)
+@router.get("/", dependencies=[Depends(verify_device)], status_code=status.HTTP_200_OK)
 async def get_all_widgets(
-    current_user=Depends(get_current_user),
+    current_user=Depends(verify_device),
     host_subject: str = None,
     widget_type: str = None
 ):
@@ -121,8 +121,8 @@ async def get_all_widgets(
     return [widget.to_mongo().to_dict() for widget in widgets]
 
 
-@router.delete("/{widget_id}", dependencies=[Depends(get_current_user)], status_code=status.HTTP_200_OK)
-async def delete_widget(widget_id: str, current_user=Depends(get_current_user)):
+@router.delete("/{widget_id}", dependencies=[Depends(verify_device)], status_code=status.HTTP_200_OK)
+async def delete_widget(widget_id: str, current_user=Depends(verify_device)):
     try:
         widget = Widget_db.objects.get(id=widget_id)
         if widget.owner != current_user.id and not current_user.admin:
@@ -145,11 +145,11 @@ async def delete_widget(widget_id: str, current_user=Depends(get_current_user)):
 # DAILY TODO WIDGET SPECIFIC ENDPOINTS
 
 
-@router.put("/{widget_id}/daily-todo/date", dependencies=[Depends(get_current_user)], status_code=status.HTTP_200_OK)
+@router.put("/{widget_id}/daily-todo/date", dependencies=[Depends(verify_device)], status_code=status.HTTP_200_OK)
 async def update_daily_todo_date(
     widget_id: str,
     date_data: dict,
-    current_user=Depends(get_current_user)
+    current_user=Depends(verify_device)
 ):
     try:
         widget = Widget_db.objects.get(id=widget_id)
@@ -197,11 +197,11 @@ async def update_daily_todo_date(
         )
 
 
-@router.get("/{widget_id}/daily-todo/todos", dependencies=[Depends(get_current_user)], status_code=status.HTTP_200_OK)
+@router.get("/{widget_id}/daily-todo/todos", dependencies=[Depends(verify_device)], status_code=status.HTTP_200_OK)
 async def get_todos(
     widget_id: str,
     date: Optional[str] = None,
-    current_user=Depends(get_current_user)
+    current_user=Depends(verify_device)
 ):
     try:
         widget = Widget_db.objects.get(id=widget_id)
@@ -245,11 +245,11 @@ async def get_todos(
         )
 
 
-@router.post("/{widget_id}/daily-todo/todos", dependencies=[Depends(get_current_user)], status_code=status.HTTP_201_CREATED)
+@router.post("/{widget_id}/daily-todo/todos", dependencies=[Depends(verify_device)], status_code=status.HTTP_201_CREATED)
 async def add_todo_item(
     widget_id: str,
     todo_data: dict,
-    current_user=Depends(get_current_user)
+    current_user=Depends(verify_device)
 ):
     try:
         widget = Widget_db.objects.get(id=widget_id)
@@ -298,12 +298,12 @@ async def add_todo_item(
         )
 
 
-@router.put("/{widget_id}/daily-todo/todos/{todo_id}", dependencies=[Depends(get_current_user)], status_code=status.HTTP_200_OK)
+@router.put("/{widget_id}/daily-todo/todos/{todo_id}", dependencies=[Depends(verify_device)], status_code=status.HTTP_200_OK)
 async def update_todo_item(
     widget_id: str,
     todo_id: str,
     todo_data: dict,
-    current_user=Depends(get_current_user)
+    current_user=Depends(verify_device)
 ):
     try:
         # Verify widget exists and user has access
@@ -345,11 +345,11 @@ async def update_todo_item(
         )
 
 
-@router.delete("/{widget_id}/daily-todo/todos/{todo_id}", dependencies=[Depends(get_current_user)], status_code=status.HTTP_200_OK)
+@router.delete("/{widget_id}/daily-todo/todos/{todo_id}", dependencies=[Depends(verify_device)], status_code=status.HTTP_200_OK)
 async def delete_todo_item(
     widget_id: str,
     todo_id: str,
-    current_user=Depends(get_current_user)
+    current_user=Depends(verify_device)
 ):
     try:
         # Verify widget exists and user has access
@@ -378,12 +378,12 @@ async def delete_todo_item(
 # Additional endpoint to get todos for a date range
 
 
-@router.get("/{widget_id}/daily-todo/todos/range", dependencies=[Depends(get_current_user)], status_code=status.HTTP_200_OK)
+@router.get("/{widget_id}/daily-todo/todos/range", dependencies=[Depends(verify_device)], status_code=status.HTTP_200_OK)
 async def get_todos_in_range(
     widget_id: str,
     start_date: str,
     end_date: str,
-    current_user=Depends(get_current_user)
+    current_user=Depends(verify_device)
 ):
     try:
         widget = Widget_db.objects.get(id=widget_id)
@@ -432,11 +432,11 @@ async def get_todos_in_range(
 # TABLE WIDGET SPECIFIC ENDPOINTS
 
 
-@router.put("/{widget_id}/table/columns", dependencies=[Depends(get_current_user)], status_code=status.HTTP_200_OK)
+@router.put("/{widget_id}/table/columns", dependencies=[Depends(verify_device)], status_code=status.HTTP_200_OK)
 async def update_table_columns(
     widget_id: str,
     columns_data: dict,
-    current_user=Depends(get_current_user)
+    current_user=Depends(verify_device)
 ):
     try:
         widget = Widget_db.objects.get(id=widget_id)
@@ -473,11 +473,11 @@ async def update_table_columns(
         )
 
 
-@router.post("/{widget_id}/table/rows", dependencies=[Depends(get_current_user)], status_code=status.HTTP_201_CREATED)
+@router.post("/{widget_id}/table/rows", dependencies=[Depends(verify_device)], status_code=status.HTTP_201_CREATED)
 async def add_table_row(
     widget_id: str,
     row_data: dict,
-    current_user=Depends(get_current_user)
+    current_user=Depends(verify_device)
 ):
     try:
         widget = Widget_db.objects.get(id=widget_id)
@@ -523,12 +523,12 @@ async def add_table_row(
         )
 
 
-@router.put("/{widget_id}/table/rows/{row_id}", dependencies=[Depends(get_current_user)], status_code=status.HTTP_200_OK)
+@router.put("/{widget_id}/table/rows/{row_id}", dependencies=[Depends(verify_device)], status_code=status.HTTP_200_OK)
 async def update_table_row(
     widget_id: str,
     row_id: str,
     row_data: dict,
-    current_user=Depends(get_current_user)
+    current_user=Depends(verify_device)
 ):
     try:
         widget = Widget_db.objects.get(id=widget_id)
@@ -572,11 +572,11 @@ async def update_table_row(
         )
 
 
-@router.delete("/{widget_id}/table/rows/{row_id}", dependencies=[Depends(get_current_user)], status_code=status.HTTP_200_OK)
+@router.delete("/{widget_id}/table/rows/{row_id}", dependencies=[Depends(verify_device)], status_code=status.HTTP_200_OK)
 async def delete_table_row(
     widget_id: str,
     row_id: str,
-    current_user=Depends(get_current_user)
+    current_user=Depends(verify_device)
 ):
     try:
         widget = Widget_db.objects.get(id=widget_id)
@@ -613,10 +613,10 @@ async def delete_table_row(
 # COMPONENT REFERENCE WIDGET ENDPOINTS
 
 
-@router.get("/{widget_id}/component-data", dependencies=[Depends(get_current_user)], status_code=status.HTTP_200_OK)
+@router.get("/{widget_id}/component-data", dependencies=[Depends(verify_device)], status_code=status.HTTP_200_OK)
 async def get_component_data(
     widget_id: str,
-    current_user=Depends(get_current_user)
+    current_user=Depends(verify_device)
 ):
     try:
         widget = Widget_db.objects.get(id=widget_id)
@@ -651,11 +651,11 @@ async def get_component_data(
 # TEXT FIELD WIDGET SPECIFIC ENDPOINTS
 
 
-@router.put("/{widget_id}/text-field/content", dependencies=[Depends(get_current_user)], status_code=status.HTTP_200_OK)
+@router.put("/{widget_id}/text-field/content", dependencies=[Depends(verify_device)], status_code=status.HTTP_200_OK)
 async def update_text_field_content(
     widget_id: str,
     content_data: dict,
-    current_user=Depends(get_current_user)
+    current_user=Depends(verify_device)
 ):
     try:
         widget = Widget_db.objects.get(id=widget_id)
@@ -706,10 +706,10 @@ async def update_text_field_content(
         )
 
 
-@router.get("/{widget_id}/text-field", dependencies=[Depends(get_current_user)], status_code=status.HTTP_200_OK)
+@router.get("/{widget_id}/text-field", dependencies=[Depends(verify_device)], status_code=status.HTTP_200_OK)
 async def get_text_field_content(
     widget_id: str,
-    current_user=Depends(get_current_user)
+    current_user=Depends(verify_device)
 ):
     try:
         widget = Widget_db.objects.get(id=widget_id)

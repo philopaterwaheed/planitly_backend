@@ -2,15 +2,15 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from models import Subject_db
 from datetime import datetime, timezone
 import uuid
-from middleWares import get_current_user, admin_required
+from middleWares import verify_device, admin_required
 from models import User, Component, Component_db, Subject, Subject_db, DataTransfer, DataTransfer_db
 from mongoengine.errors import DoesNotExist, ValidationError
 
 router = APIRouter(prefix="/datatransfers", tags=["DataTransfer"])
 
 
-@router.post("/", dependencies=[Depends(get_current_user)], status_code=status.HTTP_201_CREATED)
-async def create_data_transfer(data: dict, current_user: User = Depends(get_current_user)):
+@router.post("/", dependencies=[Depends(verify_device)], status_code=status.HTTP_201_CREATED)
+async def create_data_transfer(data: dict, current_user: User = Depends(verify_device)):
     try:
         data_id = data.get('id', str(uuid.uuid4()))
         source_component_id = data.get('source_component') or 1
@@ -76,8 +76,8 @@ async def create_data_transfer(data: dict, current_user: User = Depends(get_curr
             status_code=500, detail=f"An unexpected error occurred: {str(e)}")
 
 
-@router.get("/{transfer_id}", dependencies=[Depends(get_current_user)], status_code=status.HTTP_200_OK)
-async def get_data_transfer(transfer_id: str, current_user: User = Depends(get_current_user)):
+@router.get("/{transfer_id}", dependencies=[Depends(verify_device)], status_code=status.HTTP_200_OK)
+async def get_data_transfer(transfer_id: str, current_user: User = Depends(verify_device)):
     """ Retrieve a data transfer by its ID. """
     try:
         data_transfer = DataTransfer_db.objects.get(id=transfer_id)
@@ -93,15 +93,15 @@ async def get_data_transfer(transfer_id: str, current_user: User = Depends(get_c
             status_code=500, detail=f"An unexpected error occurred: {str(e)}")
 
 
-@router.get("/", dependencies=[Depends(get_current_user), Depends(admin_required)], status_code=status.HTTP_200_OK)
-async def get_all_data_transfers(current_user=Depends(get_current_user)):
+@router.get("/", dependencies=[Depends(verify_device), Depends(admin_required)], status_code=status.HTTP_200_OK)
+async def get_all_data_transfers(current_user=Depends(verify_device)):
     """ Retrieve all data transfers. """
     data_transfers = DataTransfer_db.objects()
     return [dt.to_mongo().to_dict() for dt in data_transfers]
 
 
-@router.delete("/{transfer_id}", dependencies=[Depends(get_current_user)], status_code=status.HTTP_200_OK)
-async def delete_data_transfer(transfer_id: str, current_user=Depends(get_current_user)):
+@router.delete("/{transfer_id}", dependencies=[Depends(verify_device)], status_code=status.HTTP_200_OK)
+async def delete_data_transfer(transfer_id: str, current_user=Depends(verify_device)):
     """Delete a data transfer."""
     try:
         data_transfer = DataTransfer_db.objects.get(id=transfer_id)
