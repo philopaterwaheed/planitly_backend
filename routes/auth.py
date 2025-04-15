@@ -10,8 +10,9 @@ from models.templets import DEFAULT_USER_TEMPLATES
 from firebase_admin import auth as firebase_auth
 import requests
 from consts import env_variables
-from errors import FirebaseRegisterError
+from errors import FirebaseRegisterError, revert_firebase_user
 from fire import initialize_firebase
+from firebase_admin import auth
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
@@ -140,21 +141,25 @@ async def register(user_data: dict, request: Request):
             return ({
                 "message": "User registered successfully",
                 "token": access_token,
-                "default_subjects_created": subjects_created
-            }), 201
+                "default_subjects_created": subjects_created,
+                "status_code": 201
+            })
         except FirebaseRegisterError as e:
             raise e
 
     except ValidationError:
+        await revert_firebase_user(firebase_uid)
         raise HTTPException(
             status_code=400, detail="Invalid data provided.")
     except NotUniqueError:
+        await revert_firebase_user(firebase_uid)
         raise HTTPException(
             status_code=409, detail="username or email already exists.")
     except FirebaseRegisterError as e:
         raise HTTPException(
             status_code=e.status_code, detail=e.message)
     except Exception as e:
+        await revert_firebase_user(firebase_uid)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -176,8 +181,9 @@ async def login_user(user_data: dict, request: Request):
         return ({
             "message": "Login successful",
             "token": access_token,
-            "email_verified": user.email_verified
-        }), 201
+            "email_verified": user.email_verified,
+            "status_code": 201
+        })
 
     except HTTPException as he:
         raise he

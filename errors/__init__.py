@@ -1,1 +1,1 @@
-from .firebase import FirebaseRegisterError
+from .firebase import FirebaseRegisterError , revert_firebase_user
