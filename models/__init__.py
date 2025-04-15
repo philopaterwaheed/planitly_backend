@@ -7,6 +7,7 @@ from .widget import Widget, Widget_db
 from .todos import Todo_db, Todo
 from .locks import AccountLock
 from .rates import RateLimit
+from .tokens import RefreshToken
 from mongoengine import connect
 from dotenv import load_dotenv
 import os
