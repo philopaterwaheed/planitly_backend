@@ -11,6 +11,7 @@ from firebase_admin import auth as firebase_auth
 import requests
 from consts import env_variables
 from errors import FirebaseRegisterError
+from fire import initialize_firebase
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
