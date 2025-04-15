@@ -5,7 +5,9 @@ import re
 import datetime
 from mongoengine.errors import NotUniqueError, ValidationError
 from models import User, Subject, Component
-from middleWares import create_access_token, authenticate_user, get_current_user, check_rate_limit, get_device_identifier, admin_required, verify_device, create_refresh_token, verify_refresh_token, remove_refresh_token
+from middleWares import authenticate_user, get_current_user, check_rate_limit, get_device_identifier, admin_required, verify_device
+from utils import create_access_token, create_refresh_token, verify_refresh_token, remove_refresh_token
+
 from models.templets import DEFAULT_USER_TEMPLATES
 from firebase_admin import auth as firebase_auth
 import requests
