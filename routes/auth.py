@@ -10,8 +10,9 @@ from models.templets import DEFAULT_USER_TEMPLATES
 from firebase_admin import auth as firebase_auth
 import requests
 from consts import env_variables
-from errors import FirebaseRegisterError
+from errors import FirebaseRegisterError , revert_firebase_user
 from fire import initialize_firebase
+from firebase_admin import auth
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
@@ -146,15 +147,18 @@ async def register(user_data: dict, request: Request):
             raise e
 
     except ValidationError:
+        await revert_firebase_user(firebase_uid)
         raise HTTPException(
             status_code=400, detail="Invalid data provided.")
     except NotUniqueError:
+        await revert_firebase_user(firebase_uid)
         raise HTTPException(
             status_code=409, detail="username or email already exists.")
     except FirebaseRegisterError as e:
         raise HTTPException(
             status_code=e.status_code, detail=e.message)
     except Exception as e:
+        await revert_firebase_user(firebase_uid)
         raise HTTPException(status_code=500, detail=str(e))
 
 
