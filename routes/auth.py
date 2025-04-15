@@ -134,13 +134,8 @@ async def register(user_data: dict, request: Request):
 
             # Create default subjects for the new user
             subjects_created = await create_default_subjects_for_user(str(user.id))
-
-            # Generate JWT token
-            access_token = await create_access_token(user_id=str(user.id))
-
             return ({
                 "message": "User registered successfully",
-                "token": access_token,
                 "default_subjects_created": subjects_created,
                 "status_code": 201
             })
