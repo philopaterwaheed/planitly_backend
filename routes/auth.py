@@ -1,11 +1,11 @@
 from fastapi import HTTPException
-from fastapi import APIRouter, HTTPException, status, Request, Depends
+from fastapi import APIRouter, HTTPException, status, Request, Response, Depends
 import uuid
 import re
 import datetime
 from mongoengine.errors import NotUniqueError, ValidationError
-from models import User, Subject, Component, Widget
-from middleWares import create_access_token, authenticate_user, get_current_user, check_rate_limit, get_device_identifier, admin_required, verify_device
+from models import User, Subject, Component
+from middleWares import create_access_token, authenticate_user, get_current_user, check_rate_limit, get_device_identifier, admin_required, verify_device, create_refresh_token, verify_refresh_token, remove_refresh_token
 from models.templets import DEFAULT_USER_TEMPLATES
 from firebase_admin import auth as firebase_auth
 import requests
@@ -160,7 +160,6 @@ async def register(user_data: dict, request: Request):
 
 @router.post("/login", status_code=status.HTTP_200_OK)
 async def login_user(user_data: dict, request: Request):
-
     try:
         username_or_email = user_data.get("usernameOremail")
         password = user_data.get("password")
@@ -170,20 +169,25 @@ async def login_user(user_data: dict, request: Request):
             raise HTTPException(
                 status_code=401, detail=error_message)
 
-        # Generate JWT token
+        # Generate JWT tokens
         access_token = await create_access_token(str(user.id))
 
-        return ({
+        # Get device ID for the refresh token
+        device_id = get_device_identifier(request)
+        refresh_token = await create_refresh_token(str(user.id), device_id)
+
+        return {
             "message": "Login successful",
-            "token": access_token,
+            "accessToken": access_token,
+            "refreshToken": refresh_token,
             "email_verified": user.email_verified,
-            "status_code": 201
-        })
+            "status": 201
+        }
 
     except HTTPException as he:
         raise he
     except Exception as e:
-        raise HTTPException(detail={"error": str(e)}, status_code=500)
+        raise HTTPException(detail=str(e), status_code=500)
 
 
 @router.post("/logout-device", status_code=status.HTTP_200_OK)
@@ -242,5 +246,28 @@ async def clear_all_devices(request: Request, current_user: User = Depends(get_c
         current_user.save()
         return {"message": "All other devices have been logged out"}
 
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/refresh-token", status_code=status.HTTP_200_OK)
+async def refresh_token(tokens: dict):
+    """Refresh the access token using the refresh token"""
+    try:
+        # Verify the refresh token
+        refresh_token = tokens.get("refreshToken")
+        user, error_message = await verify_refresh_token(refresh_token)
+        if error_message != "Token has expired":
+            user, removed_error = remove_refresh_token(refresh_token)
+            if removed_error:
+                raise HTTPException(status_code=401, detail=removed_error)
+            raise HTTPException(status_code=401, detail=error_message)
+        if not user:
+            raise HTTPException(status_code=401, detail=error_message)
+        # Generate a new access token
+        access_token = await create_access_token(str(user.id))
+        return {"accessToken": access_token, "refreshToken": refresh_token}
+    except HTTPException as he:
+        raise he
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

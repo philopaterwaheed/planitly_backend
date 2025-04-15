@@ -1,5 +1,6 @@
 from mongoengine import Document, StringField, EmailField, BooleanField, DateTimeField, IntField, ListField
 from werkzeug.security import generate_password_hash, check_password_hash
+from .tokens import RefreshToken
 import datetime
 
 
@@ -37,6 +38,7 @@ class User(Document):
         """Remove a device from user's device list"""
         if device_id in self.devices:
             self.devices.remove(device_id)
+            RefreshToken.objects(device_id=device_id).delete()
             self.save()
             return True
         return False
