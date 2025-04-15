@@ -1,6 +1,6 @@
 from mongoengine import Document, StringField, EmailField, BooleanField, DateTimeField, IntField, ListField
 from werkzeug.security import generate_password_hash, check_password_hash
-from model import RefreshToken
+from .tokens import RefreshToken
 import datetime
 
 
