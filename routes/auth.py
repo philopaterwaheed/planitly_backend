@@ -1,3 +1,4 @@
+from fastapi import HTTPException
 from fastapi import APIRouter, HTTPException, status, Request, Depends
 import uuid
 import re
@@ -7,24 +8,39 @@ from models import User, Subject, Component, Widget
 from middleWares import create_access_token, authenticate_user, get_current_user, check_rate_limit, get_device_identifier, admin_required, verify_device
 from models.templets import DEFAULT_USER_TEMPLATES
 from firebase_admin import auth as firebase_auth
-from fire import send_verification_email
 import requests
+from consts import env_variables
+from errors import FirebaseRegisterError
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
+if env_variables["DEV"]:
+    fire_url = "http://localhost:3000/api/node/firebase_register"
+else:
+    fire_url = "https://planitly-backend.vercel.app/firebase_register"
 
 
-async def call_node():
-    url = "http://localhost:3000/api/node"
-
+async def node_firebase(email: str, password: str):
     try:
-        response = requests.get(url)
-        data = response.json()
-        return {"message": "Node.js route called successfully", "data": data}
-    except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to call Node.js route: {str(e)}"
-        )
+        data = {"email": email, "password": password}
+        response = requests.post(fire_url, json=data)
+
+        if response.status_code != 201:
+            try:
+                error_msg = response.json().get("error", response.text)
+            except Exception:
+                error_msg = response.text
+
+            raise FirebaseRegisterError(
+                message=error_msg,
+                status_code=response.status_code
+            )
+
+        return response.json().get("firebase_uid")
+
+    except requests.exceptions.RequestException as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 async def create_default_subjects_for_user(user_id):
     """Create default non-deletable subjects for a new user."""
@@ -84,7 +100,6 @@ async def create_default_subjects_for_user(user_id):
 async def register(user_data: dict, request: Request):
     """Register a new user with device tracking."""
     # todo add this to the get user
-    # First check rate limiting
 
     try:
         username = user_data.get("username")
@@ -104,12 +119,8 @@ async def register(user_data: dict, request: Request):
             raise HTTPException(
                 status_code=400, detail="Weak password. Must contain uppercase, number, and special character.")
         try:
-            firebase_user = firebase_auth.create_user(
-                email=email, password=password, email_verified=False)
-            verification_link = firebase_auth.generate_email_verification_link(
-                email)
-            send_verification_email(email)
-            user = User(id=str(uuid.uuid4()), firebase_uid=firebase_user.uid, username=username,
+            firebase_uid = await node_firebase(email, password)
+            user = User(id=str(uuid.uuid4()), firebase_uid=firebase_uid, username=username,
                         email=email, email_verified=False, password=password)
             user.hash_password()
 
@@ -130,15 +141,18 @@ async def register(user_data: dict, request: Request):
                 "token": access_token,
                 "default_subjects_created": subjects_created
             }), 201
-        except firebase_auth.EmailAlreadyExistsError:
-            raise NotUniqueError()
+        except FirebaseRegisterError as e:
+            raise e
 
     except ValidationError:
         raise HTTPException(
             status_code=400, detail="Invalid data provided.")
     except NotUniqueError:
         raise HTTPException(
-            status_code=400, detail="username or email already exists.")
+            status_code=409, detail="username or email already exists.")
+    except FirebaseRegisterError as e:
+        raise HTTPException(
+            status_code=e.status_code, detail=e.message)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
