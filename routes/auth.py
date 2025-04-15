@@ -8,9 +8,23 @@ from middleWares import create_access_token, authenticate_user, get_current_user
 from models.templets import DEFAULT_USER_TEMPLATES
 from firebase_admin import auth as firebase_auth
 from fire import send_verification_email
+import requests
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
+
+
+async def call_node():
+    url = "http://localhost:3000/api/node"
+
+    try:
+        response = requests.get(url)
+        data = response.json()
+        return {"message": "Node.js route called successfully", "data": data}
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to call Node.js route: {str(e)}"
+        )
 
 async def create_default_subjects_for_user(user_id):
     """Create default non-deletable subjects for a new user."""

@@ -14,7 +14,7 @@ const PORT = process.env.PORT || 3000;
 
 app.use(bodyParser.json());
 
-app.post('/register', async (req, res) => {
+app.post('/firebase_register', async (req, res) => {
   const { email, password } = req.body;
 
   try {
