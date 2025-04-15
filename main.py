@@ -13,7 +13,9 @@ import os
 import logging
 from mongoengine import connect, disconnect
 from pymongo.errors import PyMongoError
-from fire import initialize_firebase # just for the sake of connecting to firebase
+# just for the sake of connecting to firebase
+from fire import initialize_firebase
+import requests
 
 # Set up logging
 logging.basicConfig(level=logging.INFO,
@@ -154,6 +156,20 @@ async def get_time():
 @app.get("/api-docs")
 async def get_docs():
     return FileResponse("Docs/planitly_Api_docs.html")
+
+
+@app.get("/call_node")
+async def call_node():
+    url = "http://localhost:3000/api/node"
+
+    try:
+        response = requests.get(url)
+        data = response.json()
+        return {"message": "Node.js route called successfully", "data": data}
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to call Node.js route: {str(e)}"
+        )
 
 
 @app.on_event("startup")

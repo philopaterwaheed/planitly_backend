@@ -7,4 +7,5 @@ python-dotenv
 passlib
 werkzeug
 python-jose
-pybind11
+firebase-admin
+requests
