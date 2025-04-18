@@ -11,7 +11,7 @@ router = APIRouter(prefix="/notifications", tags=["Notification_DB"])
 async def create_notification(data: dict, current_user: User = Depends(verify_device)):
     """Create a new notification for a user."""
     user_id = data.get("user_id")
-    if user_id != str(current_user.id) or not current_user.admin:
+    if user_id != str(current_user.id) and not current_user.admin:
         raise HTTPException(status_code=403, detail="Permission denied")
     try:
         notification = Notification_DB(
@@ -49,7 +49,7 @@ async def mark_notification_as_read(notification_id: str, current_user: User = D
     try:
         notification = Notification_DB.objects.get(
             id=notification_id, user_id=str(current_user.id))
-        if notification.user_id != str(current_user.id) or not current_user.admin:
+        if notification.user_id != str(current_user.id) and not current_user.admin:
             raise HTTPException(status_code=403, detail="Permission denied")
         notification.is_read = True
         notification.save()
@@ -68,7 +68,7 @@ async def delete_notification(notification_id: str, current_user: User = Depends
     try:
         notification = Notification_DB.objects.get(
             id=notification_id, user_id=str(current_user.id))
-        if notification.user_id != str(current_user.id) or not current_user.admin:
+        if notification.user_id != str(current_user.id) and not current_user.admin:
             raise HTTPException(status_code=403, detail="Permission denied")
         notification.delete()
         return {"message": "Notification_DB deleted successfully"}
