@@ -12,7 +12,8 @@ async def create_notification(data: dict, current_user: User = Depends(verify_de
     """Create a new notification for a user."""
     user_id = data.get("user_id")
     if user_id != str(current_user.id) and not current_user.admin:
-        raise HTTPException(status_code=403, detail="Permission denied")
+        print (user_id, str(current_user.id), current_user.admin)
+        raise HTTPException(status_code=403, detail="Not authorized to create notification for this user")
     try:
         notification = Notification_DB(
             user_id=user_id,
@@ -50,7 +51,7 @@ async def mark_notification_as_read(notification_id: str, current_user: User = D
         notification = Notification_DB.objects.get(
             id=notification_id, user_id=str(current_user.id))
         if notification.user_id != str(current_user.id) and not current_user.admin:
-            raise HTTPException(status_code=403, detail="Permission denied")
+            raise HTTPException(status_code=403, detail="not authorized to mark this notification as read")
         notification.is_read = True
         notification.save()
         return {"message": "Notification_DB marked as read", "notification": notification.to_dict()}
@@ -69,7 +70,7 @@ async def delete_notification(notification_id: str, current_user: User = Depends
         notification = Notification_DB.objects.get(
             id=notification_id, user_id=str(current_user.id))
         if notification.user_id != str(current_user.id) and not current_user.admin:
-            raise HTTPException(status_code=403, detail="Permission denied")
+            raise HTTPException(status_code=403, detail="not authorized to delete this notification")
         notification.delete()
         return {"message": "Notification_DB deleted successfully"}
     except DoesNotExist:
