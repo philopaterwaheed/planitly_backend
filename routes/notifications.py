@@ -12,8 +12,9 @@ async def create_notification(data: dict, current_user: User = Depends(verify_de
     """Create a new notification for a user."""
     user_id = data.get("user_id")
     if user_id != str(current_user.id) and not current_user.admin:
-        print (user_id, str(current_user.id), current_user.admin)
-        raise HTTPException(status_code=403, detail="Not authorized to create notification for this user")
+        print(user_id, str(current_user.id), current_user.admin)
+        raise HTTPException(
+            status_code=403, detail="Not authorized to create notification for this user")
     try:
         notification = Notification_DB(
             user_id=user_id,
@@ -31,11 +32,13 @@ async def create_notification(data: dict, current_user: User = Depends(verify_de
 async def get_notifications(
     current_user: User = Depends(verify_device),
     # Number of notifications to fetch (default: 10)
-    limit: int = Query(10, ge=1),
+    limit: int = Query(20, ge=1),
     # Number of notifications to skip (default: 0)
     offset: int = Query(0, ge=0)
 ):
     try:
+        if not current_user.admin and limit > 20:
+            limit = 20
         notifications = Notification_DB.objects(user_id=str(current_user.id)).order_by(
             "-created_at").skip(offset).limit(limit)
         return [notification.to_dict() for notification in notifications]
@@ -51,7 +54,8 @@ async def mark_notification_as_read(notification_id: str, current_user: User = D
         notification = Notification_DB.objects.get(
             id=notification_id, user_id=str(current_user.id))
         if notification.user_id != str(current_user.id) and not current_user.admin:
-            raise HTTPException(status_code=403, detail="not authorized to mark this notification as read")
+            raise HTTPException(
+                status_code=403, detail="not authorized to mark this notification as read")
         notification.is_read = True
         notification.save()
         return {"message": "Notification_DB marked as read", "notification": notification.to_dict()}
@@ -70,7 +74,8 @@ async def delete_notification(notification_id: str, current_user: User = Depends
         notification = Notification_DB.objects.get(
             id=notification_id, user_id=str(current_user.id))
         if notification.user_id != str(current_user.id) and not current_user.admin:
-            raise HTTPException(status_code=403, detail="not authorized to delete this notification")
+            raise HTTPException(
+                status_code=403, detail="not authorized to delete this notification")
         notification.delete()
         return {"message": "Notification_DB deleted successfully"}
     except DoesNotExist:
