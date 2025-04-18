@@ -19,8 +19,10 @@ from firebase_admin import auth
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
 if env_variables["DEV"]:
+    print("Using local Firebase URL")
     fire_url = "http://localhost:3000/api/node/firebase_register"
 else:
+    print ("Using production Firebase URL")
     fire_url = "https://planitly-backend.vercel.app/api/node/firebase_register"
 
 

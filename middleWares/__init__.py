@@ -7,9 +7,8 @@ from jose import JWTError, ExpiredSignatureError, jwt  # Used for decoding JWT
 from models import User, RateLimit, RefreshToken
 from models.locks import is_account_locked, lock_account
 from firebase_admin import auth
-from utils import oauth2_scheme , JWT_SECRET_KEY, ALGORITHM
-
-
+from utils import oauth2_scheme, JWT_SECRET_KEY, ALGORITHM
+from consts import env_variables
 
 
 async def check_request_limit(request: Request):
@@ -63,17 +62,21 @@ def admin_required(user: User = Depends(get_current_user)):
     return user  # Return user if admin
 
 
-
-
 MAX_REQUESTS_PER_MINUTE = 60
 
 
 def get_device_identifier(request: Request):
     """Generate a unique device identifier based on user agent and IP"""
-    user_agent = request.headers.get("user-agent", "")
+    user_agent = request.headers.get(
+        "user-agent", "")  # if we want per clint the user agent
     client_ip = request.client.host
     # Create a hash from user agent and IP
-    device_hash = hashlib.md5(f"{user_agent}:{client_ip}".encode()).hexdigest()
+    if env_variables["DEV"]:
+        device_hash = hashlib.md5(client_ip.encode()).hexdigest()
+    else:
+        device_hash = hashlib.md5(
+            f"{user_agent}:{client_ip}".encode()).hexdigest()
+
     return device_hash
 
 
@@ -176,4 +179,3 @@ async def verify_device(request: Request, current_user: User = Depends(get_curre
             detail="Unrecognized device. Please login again."
         )
     return current_user
-
