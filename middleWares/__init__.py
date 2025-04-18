@@ -89,7 +89,6 @@ async def check_rate_limit(request: Request):
     # Find or create rate limit document
     rate_limit = RateLimit.objects(
         key=client_ip,
-        reset_at__gt=current_time
     ).first()
 
     if not rate_limit:
@@ -103,7 +102,12 @@ async def check_rate_limit(request: Request):
         return True
 
     # Increment count
-    rate_limit.count += 1
+    if rate_limit.reset_at < current_time:
+        # Reset count if time has passed
+        rate_limit.count = 1
+        rate_limit.reset_at = reset_time
+    else:
+        rate_limit.count += 1
     rate_limit.save()
 
     # Check if limit exceeded
