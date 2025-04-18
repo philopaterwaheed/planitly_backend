@@ -34,7 +34,7 @@ class User(Document):
             self.save()
         return True
 
-    def remove_device(self, device_id):
+    async def remove_device(self, device_id):
         """Remove a device from user's device list"""
         if device_id in self.devices:
             self.devices.remove(device_id)
