@@ -4,10 +4,9 @@ import uuid
 import re
 import datetime
 from mongoengine.errors import NotUniqueError, ValidationError
-from models import User, Subject, Component
+from models import User, Subject, Component , FCMManager
 from middleWares import authenticate_user, get_current_user, check_rate_limit, get_device_identifier, admin_required, verify_device
 from utils import create_access_token, create_refresh_token, verify_refresh_token, remove_refresh_token
-
 from models.templets import DEFAULT_USER_TEMPLATES
 from firebase_admin import auth as firebase_auth
 import requests
@@ -178,7 +177,9 @@ async def login_user(user_data: dict, request: Request):
 
         # Get device ID for the refresh token
         device_id = get_device_identifier(request)
-        refresh_token = await create_refresh_token(str(user.id), device_id)
+        user_id_str = str(user.id)
+        refresh_token = await create_refresh_token(user_id_str, device_id)
+        await FCMManager.send_login_notification(user_id_str, device_id)
 
         return {
             "message": "Login successful",
@@ -203,7 +204,8 @@ async def logout_device(device_data: dict, current_user: User = Depends(get_curr
             raise HTTPException(
                 status_code=400, detail="Device ID is required")
 
-        success = current_user.remove_device(device_id)
+        success = await current_user.remove_device(device_id)
+        await FCMManager.remove_token(str(current_user.id), device_id)
         if not success:
             raise HTTPException(status_code=404, detail="Device not found")
 
