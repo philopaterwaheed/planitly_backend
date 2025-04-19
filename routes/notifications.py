@@ -68,8 +68,8 @@ async def get_notifications(
             .limit(limit)
         count = Notification_db.objects(user_id=str(current_user.id)).count()
         return {
-            "notifications": [notification.to_dict() for notification in notifications],
-            "total": count
+            "total": count,
+            "notifications": [notification.to_dict() for notification in notifications]
         }
     except Exception as e:
         raise HTTPException(

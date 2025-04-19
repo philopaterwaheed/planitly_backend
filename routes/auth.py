@@ -4,7 +4,7 @@ import uuid
 import re
 import datetime
 from mongoengine.errors import NotUniqueError, ValidationError
-from models import User, Subject, Component , FCMManager
+from models import User, Subject, Component, FCMManager
 from middleWares import authenticate_user, get_current_user, check_rate_limit, get_device_identifier, admin_required, verify_device
 from utils import create_access_token, create_refresh_token, verify_refresh_token, remove_refresh_token
 from models.templets import DEFAULT_USER_TEMPLATES
@@ -21,7 +21,7 @@ if env_variables["DEV"]:
     print("Using local Firebase URL")
     fire_url = "http://localhost:3000/api/node/firebase_register"
 else:
-    print ("Using production Firebase URL")
+    print("Using production Firebase URL")
     fire_url = "https://planitly-backend.vercel.app/api/node/firebase_register"
 
 
@@ -262,17 +262,27 @@ async def refresh_token(tokens: dict):
     try:
         # Verify the refresh token
         refresh_token = tokens.get("refreshToken")
+        if not refresh_token:
+            raise HTTPException(
+                status_code=400, detail="Refresh token is required")
+
         user, error_message = await verify_refresh_token(refresh_token)
-        if error_message != "Token has expired":
-            user, removed_error = remove_refresh_token(refresh_token)
-            if removed_error:
-                raise HTTPException(status_code=401, detail=removed_error)
-            raise HTTPException(status_code=401, detail=error_message)
-        if not user:
-            raise HTTPException(status_code=401, detail=error_message)
+
+        # If there's an error message, handle it
+        if error_message:
+            # Try to remove the token regardless of error type
+            removed, remove_error = await remove_refresh_token(refresh_token)
+            if not removed:
+                # If there was an error removing the token, report that
+                raise HTTPException(status_code=401, detail=remove_error)
+            # Otherwise report the original verification error
+            raise HTTPException(
+                status_code=401, detail=error_message)
+
         # Generate a new access token
         access_token = await create_access_token(str(user.id))
         return {"accessToken": access_token, "refreshToken": refresh_token}
+
     except HTTPException as he:
         raise he
     except Exception as e:
