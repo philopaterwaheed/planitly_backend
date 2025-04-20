@@ -8,6 +8,7 @@ import uuid
 from typing import Optional
 from cloudinary.uploader import upload
 from cloudinary.exceptions import Error as CloudinaryError
+from cloud import dummy
 
 router = APIRouter(prefix="/widgets", tags=["Widget"])
 

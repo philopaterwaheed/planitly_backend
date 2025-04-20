@@ -5,15 +5,13 @@ import re
 import datetime
 from mongoengine.errors import NotUniqueError, ValidationError
 from models import User, Subject, Component, FCMManager
-from middleWares import authenticate_user, get_current_user, check_rate_limit, get_device_identifier, admin_required, verify_device
-from utils import create_access_token, create_refresh_token, verify_refresh_token, remove_refresh_token
+from middleWares import authenticate_user, get_current_user,  get_device_identifier, verify_device
+from utils import create_access_token, create_refresh_token, verify_refresh_token, remove_refresh_token , logout_user
 from models.templets import DEFAULT_USER_TEMPLATES
-from firebase_admin import auth as firebase_auth
 import requests
 from consts import env_variables
-from errors import FirebaseRegisterError, revert_firebase_user
-from fire import initialize_firebase
-from firebase_admin import auth
+from errors import FirebaseRegisterError, revert_firebase_user , UserLogutError
+from fire import initialize_firebase 
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
@@ -204,15 +202,14 @@ async def logout_device(device_data: dict, current_user: User = Depends(get_curr
             raise HTTPException(
                 status_code=400, detail="Device ID is required")
 
-        success = await current_user.remove_device(device_id)
-        await FCMManager.remove_token(str(current_user.id), device_id)
-        if not success:
-            raise HTTPException(status_code=404, detail="Device not found")
-
+        await logout_user(current_user, device_id)
         return {"message": "Device logged out successfully"}
 
     except HTTPException as he:
         raise he
+    except UserLogutError as e:
+        raise HTTPException(
+            status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

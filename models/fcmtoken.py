@@ -67,10 +67,9 @@ class FCMManager:
         """Remove an FCM token for a user and device"""
         try:
             FCMToken_db.objects(user_id=user_id, device_id=device_id).delete()
-            return True
+            return True , None
         except Exception as e:
-            print(f"Error removing FCM token: {str(e)}")
-            return False
+            return False , (f"Error removing FCM token: {str(e)}")  
 
     @staticmethod
     async def remove_all_tokens(user_id: str, except_device_id: Optional[str] = None) -> bool:

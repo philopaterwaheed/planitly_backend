@@ -36,12 +36,20 @@ class User(Document):
 
     async def remove_device(self, device_id):
         """Remove a device from user's device list"""
+        if not device_id:
+            return False, "Device ID cannot be empty."
+
         if device_id in self.devices:
             self.devices.remove(device_id)
-            RefreshToken.objects(device_id=device_id).delete()
+            try:
+                RefreshToken.objects(device_id=device_id).delete()
+            except Exception as e:
+                # Log or handle token deletion failure
+                return False, f"Failed to delete refresh token for device {device_id}: {e}"
             self.save()
-            return True
-        return False
+            return True, None
+        else:
+            return False, f"Device ID {device_id} not found in user's device list."
 
     def increment_invalid_attempts(self):
         """Increment the invalid attempts counter"""
