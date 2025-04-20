@@ -1,12 +1,13 @@
-
 # routers/widget.py
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, File, UploadFile
 from datetime import datetime, timedelta
 from models import Widget_db, Widget, Component_db, User, Subject_db, Todo_db, Todo
 from mongoengine.errors import DoesNotExist, ValidationError
 from middleWares import verify_device
 import uuid
 from typing import Optional
+from cloudinary.uploader import upload
+from cloudinary.exceptions import Error as CloudinaryError
 
 router = APIRouter(prefix="/widgets", tags=["Widget"])
 
@@ -758,3 +759,65 @@ async def get_text_field_content(
         raise HTTPException(
             status_code=500, detail=f"An unexpected error occurred: {str(e)}"
         )
+
+
+@router.post("/photo-widget", dependencies=[Depends(verify_device)], status_code=status.HTTP_201_CREATED)
+async def create_photo_widget(
+    data: dict,
+    file: UploadFile = File(None),  # Optional photo upload
+    current_user: User = Depends(verify_device)
+):
+    """Create a new photo widget."""
+    try:
+        host_subject_id = data.get("host_subject")
+        if not host_subject_id:
+            raise HTTPException(status_code=400, detail="Host subject is required")
+
+        # Validate host subject
+        host_subject = Subject_db.objects(id=host_subject_id).first()
+        if not host_subject:
+            raise HTTPException(status_code=404, detail="Host subject not found")
+
+        if current_user.id != host_subject.owner and not current_user.admin:
+            raise HTTPException(status_code=403, detail="Not authorized to create widget for this subject")
+
+        # Handle photo upload if provided
+        photo_url = None
+        if file:
+            file_content = await file.read()
+            result = upload(file_content, folder="photo_widgets")
+            photo_url = result["secure_url"]
+
+        # Create the widget
+        widget = Widget_db(
+            type="photo_widget",
+            host_subject=host_subject,
+            data={"photo_url": photo_url},
+            owner=current_user.id
+        )
+        widget.save()
+
+        return {"message": "Photo widget created successfully", "widget": widget.to_mongo().to_dict()}
+    except CloudinaryError as e:
+        raise HTTPException(status_code=500, detail=f"Cloudinary error: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
+
+
+@router.get("/{widget_id}/photo-widget", dependencies=[Depends(verify_device)], status_code=status.HTTP_200_OK)
+async def get_photo_widget(widget_id: str, current_user: User = Depends(verify_device)):
+    """Retrieve a photo widget."""
+    try:
+        widget = Widget_db.objects.get(id=widget_id)
+
+        if widget.owner != current_user.id and not current_user.admin:
+            raise HTTPException(status_code=403, detail="Not authorized to access this widget")
+
+        if widget.type != "photo_widget":
+            raise HTTPException(status_code=400, detail="This endpoint is only for photo widgets")
+
+        return widget.to_mongo().to_dict()
+    except DoesNotExist:
+        raise HTTPException(status_code=404, detail="Widget not found")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")

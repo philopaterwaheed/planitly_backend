@@ -9,3 +9,5 @@ werkzeug
 python-jose
 firebase-admin
 requests
+python-multipart
+cloudinary

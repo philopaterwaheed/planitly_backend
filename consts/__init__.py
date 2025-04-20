@@ -15,6 +15,10 @@ env_variables = {
     'MESSAGINGS': os.getenv('MESSAGINGS'),
     'APPID': os.getenv('APPID'),
     'MEASUREMEN': os.getenv('MEASUREMEN'),
+    'CLOUDNARY_API_KEY': os.getenv('CLOUDNARY_API_KEY'),
+    'CLOUDNARY_API_SECRET': os.getenv('CLOUDNARY_API_SECRET'),
+    'CLOUDNARY_CLOUD_NAME': os.getenv('CLOUDNARY_CLOUD_NAME'),
+    'CLOUDNARY_URL': f"https://api.cloudinary.com/v1_1/{os.getenv('CLOUDNARY_CLOUD_NAME')}/image/upload",
     'DEV': os.getenv('DEV'),
     'FIREBASE_CREDENTIALS_JSON': {
         'type': "service_account",

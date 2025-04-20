@@ -4,7 +4,7 @@ from models import User
 from middleWares import verify_device, get_device_identifier
 from mongoengine.errors import DoesNotExist
 
-router = APIRouter(prefix="/notifications", tags=["Notification_DB"])
+router = APIRouter(prefix="/notifications", tags=["Notification"])
 
 
 @router.post("/", status_code=status.HTTP_201_CREATED)
