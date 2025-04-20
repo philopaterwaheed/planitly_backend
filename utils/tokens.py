@@ -91,7 +91,7 @@ async def verify_refresh_token(refresh_token: str):
         return None, "Invalid token"
 
 
-async def remove_refresh_token(refresh_token: str):
+async def remove_refresh_token(refresh_token: str , search_device = True ):
     try:
         # Find the token record
         token_record = RefreshToken.objects(token_id=refresh_token).first()
@@ -107,7 +107,7 @@ async def remove_refresh_token(refresh_token: str):
 
         # Remove the device from the user's devices array
         user = User.objects(id=user_id).first()
-        if user and device_id in user.devices:
+        if user and search_device and device_id in user.devices:
             user.devices.remove(device_id)
             user.save()
 

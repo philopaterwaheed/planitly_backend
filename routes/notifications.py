@@ -144,7 +144,7 @@ async def register_fcm_token(request: Request, token_data: dict, current_user: U
             raise HTTPException(
                 status_code=500, detail="Failed to register FCM token")
 
-        return {"message": "FCM token registered successfully"}
+        return {"detail": "FCM token registered successfully"}
 
     except HTTPException as he:
         raise he
