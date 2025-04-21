@@ -4,7 +4,9 @@ import bodyParser from 'body-parser';
 import dotenv from 'dotenv';
 import {
 	createUserWithEmailAndPassword,
-	sendEmailVerification
+	sendEmailVerification,
+	signInWithEmailAndPassword,
+	sendPasswordResetEmail
 } from 'firebase/auth';
 
 dotenv.config();
@@ -45,6 +47,65 @@ app.post('/api/node/firebase_register', async (req, res) => {
 	}
 });
 
+// Firebase Forget Password Route
+app.post('/api/node/forgot-password', async (req, res) => {
+	const { email } = req.body;
+
+	try {
+		if (!email) {
+			return res.status(400).json({ error: 'Email is required.' });
+		}
+
+		// Send password reset email using Firebase
+		await sendPasswordResetEmail(auth, email);
+
+		console.log('Password reset email sent to:', email);
+		res.status(200).json({ message: 'Password reset email sent successfully.' });
+	} catch (error) {
+		console.error('Error during password reset:', error);
+
+		// Firebase Auth specific error handling
+		switch (error.code) {
+			case 'auth/user-not-found':
+				return res.status(404).json({ error: 'User with this email does not exist.' });
+			case 'auth/invalid-email':
+				return res.status(400).json({ error: 'Invalid email address.' });
+			default:
+				return res.status(500).json({ error: 'Internal Server Error.' });
+		}
+	}
+});
+app.post('/api/node/firebase_login', async (req, res) => {
+	const { email, password } = req.body;
+
+	try {
+		if (!email || !password) {
+			return res.status(400).json({ error: 'Email and password are required.' });
+		}
+
+		const userCredential = await signInWithEmailAndPassword(auth, email, password);
+
+		console.log('User logged in:', userCredential.user.uid);
+		res.status(200).json({
+			message: 'Login successful.',
+			firebase_uid: userCredential.user.uid,
+			email_verified: userCredential.user.emailVerified,
+		});
+	} catch (error) {
+		console.error('Error during login:', error);
+
+		switch (error.code) {
+			case 'auth/user-not-found':
+				return res.status(404).json({ error: 'User with this email does not exist.' });
+			case 'auth/wrong-password':
+				return res.status(401).json({ error: 'Incorrect password.' });
+			case 'auth/invalid-email':
+				return res.status(400).json({ error: 'Invalid email address.' });
+			default:
+				return res.status(500).json({ error: 'Internal Server Error.' });
+		}
+	}
+});
 app.listen(PORT, () => {
 	console.log(`Server running on http://localhost:${PORT}`);
 });

@@ -9,7 +9,18 @@ from models.locks import is_account_locked, lock_account
 from firebase_admin import auth
 from utils import oauth2_scheme, JWT_SECRET_KEY, ALGORITHM
 from consts import env_variables
+import requests
 
+if env_variables["DEV"]:
+    print("Using local Firebase URL")
+    fire_reg_url = "http://localhost:3000/api/node/firebase_register"
+    fire_login_url = "http://localhost:3000/api/node/firebase_login"
+    fire_forget_url= "http://localhost:3000/api/node/forgot-password"
+else:
+    print("Using production Firebase URL")
+    fire_reg_url = "https://planitly-backend.vercel.app/api/node/firebase_register"
+    fire_login_url = "https://planitly-backend.vercel.app/api/node/firebase_login"
+    fire_forget_url = "https://planitly-backend.vercel.app/api/node/forgot-password"
 
 async def check_request_limit(request: Request):
     """Check if the request is within rate limits"""
@@ -131,7 +142,16 @@ async def authenticate_user(username_or_email: str, password: str, request: Requ
     if await is_account_locked(str(user.id)):
         return None, "Account locked due to too many invalid attempts"
 
-    if not user.check_password(password):
+    email = user.email
+    response = requests.post(fire_login_url, json={"email": email, "password": password})
+    if response.status_code != 200:
+        # Extract the message from the response
+        try:
+            response_data = response.json()
+            error_message = response_data.get("message", response.text)
+        except ValueError:
+            error_message = response.text
+
         # Increment invalid attempts on failure
         user.invalid_attempts += 1
         user.save()
@@ -140,22 +160,14 @@ async def authenticate_user(username_or_email: str, password: str, request: Requ
         if user.invalid_attempts >= 10:
             await lock_account(str(user.id))
 
-        return None, "Wrong password"
-
-    # If password is correct
-    if not user.email_verified and user.firebase_uid:
-        try:
-            # Check Firebase for email verification status
-            firebase_user = auth.get_user(user.firebase_uid)
-            if firebase_user.email_verified:
-                user.email_verified = True
-                user.save()
-            else:
-                return None, "Email not verified, Please check your inbox for verification link."
-        except auth.UserNotFoundError:
-            if not user.email_verified:
-                return None, "Email not verified, Please check your inbox for verification link."
-
+        return None, error_message
+    email_verified = response.json().get("email_verified", False)
+    if not user.email_verified :
+        if not email_verified:
+            return None, "Email not verified, Please check your inbox for verification link."
+        else:
+            user.email_verified = True
+            user.save()
     # Reset invalid attempts on successful login
     user.invalid_attempts = 0
 

@@ -17,10 +17,14 @@ router = APIRouter(prefix="/auth", tags=["Auth"])
 
 if env_variables["DEV"]:
     print("Using local Firebase URL")
-    fire_url = "http://localhost:3000/api/node/firebase_register"
+    fire_reg_url = "http://localhost:3000/api/node/firebase_register"
+    fire_login_url = "http://localhost:3000/api/node/firebase_login"
+    fire_forget_url= "http://localhost:3000/api/node/forgot-password"
 else:
     print("Using production Firebase URL")
-    fire_url = "https://planitly-backend.vercel.app/api/node/firebase_register"
+    fire_reg_url = "https://planitly-backend.vercel.app/api/node/firebase_register"
+    fire_login_url = "https://planitly-backend.vercel.app/api/node/firebase_login"
+    fire_forget_url = "https://planitly-backend.vercel.app/api/node/forgot-password"
 
 
 async def node_firebase(email: str, password: str):
@@ -118,9 +122,9 @@ async def register(user_data: dict, request: Request):
                 status_code=400,
                 detail="Username must contain at least one letter and can only include letters, numbers, underscores, dots, and hyphens."
             )
-        if not re.match(r"^(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&^#_+=<>.,;:|\\/-])[A-Za-z\d@$!%*?&^#_+=<>.,;:|\\/-]{8,}$", password):
+        if not re.match(r"^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*[@$!%*?&^#_+=<>.,;:|\\/-])[A-Za-z\d@$!%*?&^#_+=<>.,;:|\\/-]{8,}$", password):
             raise HTTPException(
-                status_code=400, detail="Weak password. Must contain uppercase, number, and special character.")
+                status_code=400, detail="Weak password. Must contain uppercase, lowercase, number, special character, and be at least 8 characters long.")
         try:
             firebase_uid = await node_firebase(email, password)
             user = User(id=str(uuid.uuid4()), firebase_uid=firebase_uid, username=username,
@@ -284,3 +288,31 @@ async def refresh_token(tokens: dict):
         raise he
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/reset-password", status_code=status.HTTP_200_OK)
+async def reset_password(user_data: dict):
+    """
+    Reset password by calling the Node.js forget-password endpoint.
+    """
+    try:
+        email = user_data.get("email")
+        if not email:
+            raise HTTPException(status_code=400, detail="Email is required.")
+        # Make a POST request to the Node.js endpoint
+        response = requests.post(fire_forget_url, json={"email": email})
+
+        # Handle the response from the Node.js API
+        if response.status_code == 200:
+            return {"detail": "Password reset email sent successfully."}
+        elif response.status_code == 404:
+            raise HTTPException(status_code=404, detail="User with this email does not exist.")
+        elif response.status_code == 400:
+            raise HTTPException(status_code=400, detail="Invalid email address.")
+        else:
+            raise HTTPException(status_code=500, detail="Failed to send password reset email.")
+
+    except requests.exceptions.RequestException as e:
+        raise HTTPException(status_code=500, detail=f"Error connecting to Node.js service: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
