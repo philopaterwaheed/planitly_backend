@@ -8,12 +8,11 @@ from pytz import UTC
 from models import User, Component, Subject, Subject_db, DataTransfer, DataTransfer_db, Connection_db, Connection, MONGO_HOST
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
-from routes import subjects, components, auth, dataTransfers, connection, widget,notifications
+from routes import subjects, components, auth, dataTransfers, connection, widget, notifications
 import os
 import logging
 from mongoengine import connect, disconnect
-from pymongo.errors import PyMongoError
-import requests
+from consts import firebase_urls
 
 # Set up logging
 logging.basicConfig(level=logging.INFO,
@@ -148,13 +147,12 @@ async def home():
 
 @app.get("/time")
 async def get_time():
-    return {"time": datetime.now(UTC).isoformat().replace("+00:00", "Z"), "utc": datetime.now(UTC).isoformat()}
+    return {"time": datetime.now(UTC).isoformat().replace("+00:00", "Z"), "utc": datetime.now(UTC).isoformat(), "fire": firebase_urls['register']}
 
 
 @app.get("/api-docs")
 async def get_docs():
     return FileResponse("Docs/planitly_Api_docs.html")
-
 
 
 @app.on_event("startup")
