@@ -6,21 +6,10 @@ from datetime import datetime, timedelta
 from jose import JWTError, ExpiredSignatureError, jwt  # Used for decoding JWT
 from models import User, RateLimit, RefreshToken
 from models.locks import is_account_locked, lock_account
-from firebase_admin import auth
 from utils import oauth2_scheme, JWT_SECRET_KEY, ALGORITHM
-from consts import env_variables
-import requests
-
-if env_variables["DEV"]:
-    print("Using local Firebase URL")
-    fire_reg_url = "http://localhost:3000/api/node/firebase_register"
-    fire_login_url = "http://localhost:3000/api/node/firebase_login"
-    fire_forget_url= "http://localhost:3000/api/node/forgot-password"
-else:
-    print("Using production Firebase URL")
-    fire_reg_url = "https://planitly-backend.vercel.app/api/node/firebase_register"
-    fire_login_url = "https://planitly-backend.vercel.app/api/node/firebase_login"
-    fire_forget_url = "https://planitly-backend.vercel.app/api/node/forgot-password"
+from consts import env_variables, firebase_urls
+from errors import FirebaseAuthError
+from fire import node_firebase
 
 async def check_request_limit(request: Request):
     """Check if the request is within rate limits"""
@@ -128,7 +117,7 @@ async def check_rate_limit(request: Request):
     return True
 
 
-async def authenticate_user(username_or_email: str, password: str, request: Request = None):
+async def authenticate_user(username_or_email: str, password: str, device_id = None):
     """Enhanced authenticate user with device tracking"""
     user = User.objects.filter(
         __raw__={"$or": [{"email": username_or_email},
@@ -143,7 +132,8 @@ async def authenticate_user(username_or_email: str, password: str, request: Requ
         return None, "Account locked due to too many invalid attempts"
 
     email = user.email
-    response = requests.post(fire_login_url, json={"email": email, "password": password})
+    response = await node_firebase(email=email, password=password, operation="login")
+    print (response.text)
     if response.status_code != 200:
         # Extract the message from the response
         try:
@@ -172,15 +162,16 @@ async def authenticate_user(username_or_email: str, password: str, request: Requ
     user.invalid_attempts = 0
 
     # Add device if request is provided
-    if request:
-        device_id = get_device_identifier(request)
-
+    if device_id:
         if device_id not in user.devices:
             # Check if device limit reached
             if len(user.devices) >= 5:
                 return None, "Maximum devices reached for this account"
 
             user.devices.append(device_id)
+        else :
+            # Device already exists, no need to add
+            return None , "Device already exists"
 
     user.save()
     return user, None

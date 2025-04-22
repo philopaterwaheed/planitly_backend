@@ -33,3 +33,12 @@ env_variables = {
         'client_x509_cert_url': os.getenv('FIREBASE_CLIENT_CERT_URL')
     }
 }
+
+firebase_base_url = "http://localhost:3000/api/node" if env_variables["DEV"] else "https://planitly-backend.vercel.app/api/node"
+print(f"Using {'local' if env_variables['DEV'] else 'production'} Firebase URL")
+
+firebase_urls = {
+    'register': f"{firebase_base_url}/firebase_register",
+    'login': f"{firebase_base_url}/firebase_login",
+    'forgot-password': f"{firebase_base_url}/firebase_forgot-password"
+}

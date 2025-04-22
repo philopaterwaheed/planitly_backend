@@ -4,49 +4,16 @@ import uuid
 import re
 import datetime
 from mongoengine.errors import NotUniqueError, ValidationError
-from models import User, Subject, Component, FCMManager
+from models import User, Subject, Component, FCMManager , RefreshToken
 from middleWares import authenticate_user, get_current_user,  get_device_identifier, verify_device
-from utils import create_access_token, create_refresh_token, verify_refresh_token, remove_refresh_token , logout_user
+from utils import create_access_token, create_refresh_token, verify_refresh_token,  logout_user
 from models.templets import DEFAULT_USER_TEMPLATES
-import requests
-from consts import env_variables
-from errors import FirebaseRegisterError, revert_firebase_user , UserLogutError
-from fire import initialize_firebase 
+from errors import revert_firebase_user , UserLogutError
+from fire import node_firebase 
+from errors import FirebaseAuthError
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
-if env_variables["DEV"]:
-    print("Using local Firebase URL")
-    fire_reg_url = "http://localhost:3000/api/node/firebase_register"
-    fire_login_url = "http://localhost:3000/api/node/firebase_login"
-    fire_forget_url= "http://localhost:3000/api/node/forgot-password"
-else:
-    print("Using production Firebase URL")
-    fire_reg_url = "https://planitly-backend.vercel.app/api/node/firebase_register"
-    fire_login_url = "https://planitly-backend.vercel.app/api/node/firebase_login"
-    fire_forget_url = "https://planitly-backend.vercel.app/api/node/forgot-password"
-
-
-async def node_firebase(email: str, password: str):
-    try:
-        data = {"email": email, "password": password}
-        response = requests.post(fire_url, json=data)
-
-        if response.status_code != 201:
-            try:
-                error_msg = response.json().get("error", response.text)
-            except Exception:
-                error_msg = response.text
-
-            raise FirebaseRegisterError(
-                message=error_msg,
-                status_code=response.status_code
-            )
-
-        return response.json().get("firebase_uid")
-
-    except requests.exceptions.RequestException as e:
-        raise HTTPException(status_code=500, detail=str(e))
 
 
 async def create_default_subjects_for_user(user_id):
@@ -126,10 +93,17 @@ async def register(user_data: dict, request: Request):
             raise HTTPException(
                 status_code=400, detail="Weak password. Must contain uppercase, lowercase, number, special character, and be at least 8 characters long.")
         try:
-            firebase_uid = await node_firebase(email, password)
+            user = User.objects.filter(
+                __raw__={"$or": [{"email": email},
+                                {"username": username}]}
+            ).first()
+
+            if user:
+                raise HTTPException(
+                    status_code=409, detail="Username or email already exists.")
+            firebase_uid = (await node_firebase(email, password , "register")).json().get("firebase_uid")
             user = User(id=str(uuid.uuid4()), firebase_uid=firebase_uid, username=username,
-                        email=email, email_verified=False, password=password)
-            user.hash_password()
+                        email=email, email_verified=False)
 
             # Add the current device
             device_id = get_device_identifier(request)
@@ -144,7 +118,7 @@ async def register(user_data: dict, request: Request):
                 "default_subjects_created": subjects_created,
                 "status_code": 201
             })
-        except FirebaseRegisterError as e:
+        except FirebaseAuthError as e:
             raise e
 
     except ValidationError:
@@ -155,11 +129,10 @@ async def register(user_data: dict, request: Request):
         await revert_firebase_user(firebase_uid)
         raise HTTPException(
             status_code=409, detail="username or email already exists.")
-    except FirebaseRegisterError as e:
+    except FirebaseAuthError as e:
         raise HTTPException(
             status_code=e.status_code, detail=e.message)
     except Exception as e:
-        await revert_firebase_user(firebase_uid)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -169,17 +142,17 @@ async def login_user(user_data: dict, request: Request):
         username_or_email = user_data.get("usernameOremail")
         password = user_data.get("password")
 
-        user, error_message = await authenticate_user(username_or_email, password, request)
+        device_id = get_device_identifier(request)
+        user, error_message = await authenticate_user(username_or_email, password, device_id)
         if not user:
             raise HTTPException(
                 status_code=401, detail=error_message)
 
+        user_id_str = str(user.id)
         # Generate JWT tokens
-        access_token = await create_access_token(str(user.id))
+        access_token = await create_access_token(user_id_str)
 
         # Get device ID for the refresh token
-        device_id = get_device_identifier(request)
-        user_id_str = str(user.id)
         refresh_token = await create_refresh_token(user_id_str, device_id)
         await FCMManager.send_login_notification(user_id_str, device_id)
 
@@ -198,10 +171,10 @@ async def login_user(user_data: dict, request: Request):
 
 
 @router.post("/logout-device", status_code=status.HTTP_200_OK)
-async def logout_device(device_data: dict, current_user: User = Depends(get_current_user)):
+async def logout_device(request: Request, current_user: User = Depends(verify_device)):
     """Logout from a specific device"""
     try:
-        device_id = device_data.get("device_id")
+        device_id = get_device_identifier(request)
         if not device_id:
             raise HTTPException(
                 status_code=400, detail="Device ID is required")
@@ -258,27 +231,45 @@ async def clear_all_devices(request: Request, current_user: User = Depends(get_c
 
 
 @router.post("/refresh-token", status_code=status.HTTP_200_OK)
-async def refresh_token(tokens: dict):
-    """Refresh the access token using the refresh token"""
+async def refresh_token(request: Request, tokens: dict):
+    """Refresh the access token using the refresh token."""
     try:
         # Verify the refresh token
         refresh_token = tokens.get("refreshToken")
         if not refresh_token:
             raise HTTPException(
-                status_code=400, detail="Refresh token is required")
+                status_code=400, detail="Refresh token is required"
+            )
 
         user, error_message = await verify_refresh_token(refresh_token)
 
         # If there's an error message, handle it
         if error_message:
-            # Try to remove the token regardless of error type
-            removed, remove_error = await remove_refresh_token(refresh_token)
-            if not removed:
-                # If there was an error removing the token, report that
-                raise HTTPException(status_code=401, detail=remove_error)
-            # Otherwise report the original verification error
-            raise HTTPException(
-                status_code=401, detail=error_message)
+            # Only handle invalid or revoked tokens
+            if error_message in ["Token has expired", "Invalid token", "Token has been revoked or does not exist"]:
+                device_id = get_device_identifier(request=request)
+
+                # Search for the device in the RefreshToken document
+                token_record = RefreshToken.objects(device_id=device_id).first()
+                if not token_record:
+                    raise HTTPException(
+                        status_code=401, detail="Device not found in refresh tokens."
+                    )
+
+                # Use the logout_user function to handle cleanup
+                current_user = User.objects(id=token_record.user_id).first()
+                if not current_user:
+                    raise HTTPException(
+                        status_code=404, detail="User not found for the device."
+                    )
+
+                await logout_user(current_user, device_id)
+                raise HTTPException(
+                    status_code=401, detail="Refresh token is invalid or revoked."
+                )
+
+            # Otherwise, report the original verification error
+            raise HTTPException(status_code=401, detail=error_message)
 
         # Generate a new access token
         access_token = await create_access_token(str(user.id))
@@ -290,7 +281,7 @@ async def refresh_token(tokens: dict):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/reset-password", status_code=status.HTTP_200_OK)
+@router.post("/forgot-password", status_code=status.HTTP_200_OK)
 async def reset_password(user_data: dict):
     """
     Reset password by calling the Node.js forget-password endpoint.
@@ -300,19 +291,12 @@ async def reset_password(user_data: dict):
         if not email:
             raise HTTPException(status_code=400, detail="Email is required.")
         # Make a POST request to the Node.js endpoint
-        response = requests.post(fire_forget_url, json={"email": email})
+        response = await node_firebase(email=email , operation="forgot-password")
 
         # Handle the response from the Node.js API
         if response.status_code == 200:
             return {"detail": "Password reset email sent successfully."}
-        elif response.status_code == 404:
-            raise HTTPException(status_code=404, detail="User with this email does not exist.")
-        elif response.status_code == 400:
-            raise HTTPException(status_code=400, detail="Invalid email address.")
-        else:
-            raise HTTPException(status_code=500, detail="Failed to send password reset email.")
-
-    except requests.exceptions.RequestException as e:
-        raise HTTPException(status_code=500, detail=f"Error connecting to Node.js service: {str(e)}")
+    except FirebaseAuthError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.message)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")

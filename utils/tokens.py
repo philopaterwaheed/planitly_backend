@@ -10,8 +10,8 @@ from models import RefreshToken, User
 JWT_SECRET_KEY = env_variables.get("JWT_SECRET", "supersecretkey")
 REJWT_SECRET_KEY = env_variables.get("REJWT_SECRET", "supersecretkey")
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_DAYS = 10
-REFRESH_TOKEN_EXPIRE_DAYS = 30
+ACCESS_TOKEN_EXPIRE_DAYS = 1
+REFRESH_TOKEN_EXPIRE_DAYS = 2
 
 # Define OAuth2 scheme
 # for accepting tokins
@@ -89,30 +89,3 @@ async def verify_refresh_token(refresh_token: str):
         return None, "Token has expired"
     except JWTError:
         return None, "Invalid token"
-
-
-async def remove_refresh_token(refresh_token: str , search_device = True ):
-    try:
-        # Find the token record
-        token_record = RefreshToken.objects(token_id=refresh_token).first()
-        if not token_record:
-            return False, "Token has been revoked or does not exist"
-
-        # Get info before removing the token
-        user_id = token_record.user_id
-        device_id = token_record.device_id
-
-        # Remove the token
-        token_record.remove()
-
-        # Remove the device from the user's devices array
-        user = User.objects(id=user_id).first()
-        if user and search_device and device_id in user.devices:
-            user.devices.remove(device_id)
-            user.save()
-
-        return True, "Device removed successfully"
-    except JWTError:
-        return False, "Invalid token"
-    except Exception as e:
-        return False, f"Error removing token: {str(e)}"

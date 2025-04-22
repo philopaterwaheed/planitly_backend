@@ -14,7 +14,6 @@ class RefreshToken(Document):
         'indexes': [
             {'fields': ['user_id', 'device_id']},
             {'fields': ['token_id']},
-            {'fields': ['expires_at'], 'expireAfterSeconds': 0}
             # todo worker to delete expired tokens
         ]
     }

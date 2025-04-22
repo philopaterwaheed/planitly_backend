@@ -48,7 +48,7 @@ app.post('/api/node/firebase_register', async (req, res) => {
 });
 
 // Firebase Forget Password Route
-app.post('/api/node/forgot-password', async (req, res) => {
+app.post('/api/node/firebase_forgot-password', async (req, res) => {
 	const { email } = req.body;
 
 	try {
@@ -101,6 +101,8 @@ app.post('/api/node/firebase_login', async (req, res) => {
 				return res.status(401).json({ error: 'Incorrect password.' });
 			case 'auth/invalid-email':
 				return res.status(400).json({ error: 'Invalid email address.' });
+			case 'auth/invalid-credential':
+				return res.status(400).json({ error: 'Wrong password' });
 			default:
 				return res.status(500).json({ error: 'Internal Server Error.' });
 		}

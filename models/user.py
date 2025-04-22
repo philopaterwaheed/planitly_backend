@@ -1,5 +1,4 @@
 from mongoengine import Document, StringField, EmailField, BooleanField, DateTimeField, IntField, ListField
-from werkzeug.security import generate_password_hash, check_password_hash
 from .tokens import RefreshToken
 import datetime
 
@@ -10,7 +9,6 @@ class User(Document):
     username = StringField(required=True, unique=True)
     email = EmailField(required=True, unique=True)
     email_verified = BooleanField(required=True, default=False)
-    password = StringField(required=True)
     admin = BooleanField(default=False, required=False)
     devices = ListField(StringField(), default=[], max_length=5)
     invalid_attempts = IntField(default=0)  # Count of invalid login attempts
@@ -18,12 +16,6 @@ class User(Document):
     last_reset = DateTimeField(default=datetime.datetime.utcnow)
 
     meta = {'collection': 'users'}
-
-    def hash_password(self):
-        self.password = generate_password_hash(self.password)
-
-    def check_password(self, password):
-        return check_password_hash(self.password, password)
 
     def add_device(self, device_id):
         """Add a device to user's device list if not at limit"""
