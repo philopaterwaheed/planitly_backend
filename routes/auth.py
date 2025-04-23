@@ -230,7 +230,7 @@ async def clear_all_devices(request: Request, current_user: User = Depends(get_c
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/refresh-token", status_code=status.HTTP_200_OK)
+@router.post("/refresh-token", status_code=status.HTTP_201_CREATED)
 async def refresh_token(request: Request, tokens: dict):
     """Refresh the access token using the refresh token."""
     try:

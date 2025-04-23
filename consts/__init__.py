@@ -34,11 +34,10 @@ env_variables = {
     }
 }
 
-firebase_base_url = (
-    "https://planitly-backend.vercel.app/api/node"
-    if not env_variables["DEV"]
-    else "http://localhost:3000/api/node"
-)
+if env_variables['DEV']:
+    firebase_base_url = "https://planitly-backend.vercel.app/api/node"
+else:
+    firebase_base_url = "http://localhost:3000/api/node"
 print(
     f"Using {'local' if env_variables['DEV'] else 'production'} Firebase URL")
 

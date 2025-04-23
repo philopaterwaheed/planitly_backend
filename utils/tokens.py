@@ -10,8 +10,8 @@ from models import RefreshToken, User
 JWT_SECRET_KEY = env_variables.get("JWT_SECRET", "supersecretkey")
 REJWT_SECRET_KEY = env_variables.get("REJWT_SECRET", "supersecretkey")
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_DAYS = 10
-REFRESH_TOKEN_EXPIRE_DAYS = 30
+ACCESS_TOKEN_EXPIRE_DAYS = 1
+REFRESH_TOKEN_EXPIRE_DAYS = 5
 
 # Define OAuth2 scheme
 # for accepting tokins
