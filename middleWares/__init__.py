@@ -7,9 +7,10 @@ from jose import JWTError, ExpiredSignatureError, jwt  # Used for decoding JWT
 from models import User, RateLimit, RefreshToken
 from models.locks import is_account_locked, lock_account
 from utils import oauth2_scheme, JWT_SECRET_KEY, ALGORITHM
-from consts import env_variables, firebase_urls
-from errors import FirebaseAuthError
 from fire import node_firebase
+from utils import logout_user
+from consts import env_variables
+
 
 async def check_request_limit(request: Request):
     """Check if the request is within rate limits"""
@@ -117,7 +118,7 @@ async def check_rate_limit(request: Request):
     return True
 
 
-async def authenticate_user(username_or_email: str, password: str, device_id = None):
+async def authenticate_user(username_or_email: str, password: str, device_id=None):
     """Enhanced authenticate user with device tracking"""
     user = User.objects.filter(
         __raw__={"$or": [{"email": username_or_email},
@@ -133,7 +134,7 @@ async def authenticate_user(username_or_email: str, password: str, device_id = N
 
     email = user.email
     response = await node_firebase(email=email, password=password, operation="login")
-    print (response.text)
+    print(response.text)
     if response.status_code != 200:
         # Extract the message from the response
         try:
@@ -152,7 +153,7 @@ async def authenticate_user(username_or_email: str, password: str, device_id = N
 
         return None, error_message
     email_verified = response.json().get("email_verified", False)
-    if not user.email_verified :
+    if not user.email_verified:
         if not email_verified:
             return None, "Email not verified, Please check your inbox for verification link."
         else:
@@ -169,9 +170,11 @@ async def authenticate_user(username_or_email: str, password: str, device_id = N
                 return None, "Maximum devices reached for this account"
 
             user.devices.append(device_id)
-        else :
+        else:
             # Device already exists, no need to add
-            return None , "Device already exists"
+            # log out it becuase maybe there is fron error
+            logout_user(cutrent_user=user, device_id=device_id)
+            return None, "Device already exists"
 
     user.save()
     return user, None
