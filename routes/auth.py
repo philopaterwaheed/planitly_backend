@@ -4,16 +4,15 @@ import uuid
 import re
 import datetime
 from mongoengine.errors import NotUniqueError, ValidationError
-from models import User, Subject, Component, FCMManager , RefreshToken
+from models import User, Subject, Component, FCMManager, RefreshToken
 from middleWares import authenticate_user, get_current_user,  get_device_identifier, verify_device
 from utils import create_access_token, create_refresh_token, verify_refresh_token,  logout_user
 from models.templets import DEFAULT_USER_TEMPLATES
-from errors import revert_firebase_user , UserLogutError
-from fire import node_firebase 
+from errors import revert_firebase_user, UserLogutError
+from fire import node_firebase
 from errors import FirebaseAuthError
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
-
 
 
 async def create_default_subjects_for_user(user_id):
@@ -95,13 +94,13 @@ async def register(user_data: dict, request: Request):
         try:
             user = User.objects.filter(
                 __raw__={"$or": [{"email": email},
-                                {"username": username}]}
+                                 {"username": username}]}
             ).first()
 
             if user:
                 raise HTTPException(
                     status_code=409, detail="Username or email already exists.")
-            firebase_uid = (await node_firebase(email, password , "register")).json().get("firebase_uid")
+            firebase_uid = (await node_firebase(email, password, "register")).json().get("firebase_uid")
             user = User(id=str(uuid.uuid4()), firebase_uid=firebase_uid, username=username,
                         email=email, email_verified=False)
 
@@ -250,7 +249,8 @@ async def refresh_token(request: Request, tokens: dict):
                 device_id = get_device_identifier(request=request)
 
                 # Search for the device in the RefreshToken document
-                token_record = RefreshToken.objects(device_id=device_id).first()
+                token_record = RefreshToken.objects(
+                    device_id=device_id).first()
                 if not token_record:
                     raise HTTPException(
                         status_code=401, detail="Device not found in refresh tokens."
@@ -291,7 +291,7 @@ async def reset_password(user_data: dict):
         if not email:
             raise HTTPException(status_code=400, detail="Email is required.")
         # Make a POST request to the Node.js endpoint
-        response = await node_firebase(email=email , operation="forgot-password")
+        response = await node_firebase(email=email, operation="forgot-password")
 
         # Handle the response from the Node.js API
         if response.status_code == 200:
@@ -299,4 +299,5 @@ async def reset_password(user_data: dict):
     except FirebaseAuthError as e:
         raise HTTPException(status_code=e.status_code, detail=e.message)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"An unexpected error occurred: {str(e)}")

@@ -11,6 +11,7 @@ class RefreshToken(Document):
     revoked = BooleanField(default=False)               # Whether the token has been revoked
     
     meta = {
+        'collection': 'refresh_tokens',  # Collection name in MongoDB
         'indexes': [
             {'fields': ['user_id', 'device_id']},
             {'fields': ['token_id']},

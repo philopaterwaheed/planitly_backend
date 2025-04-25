@@ -23,6 +23,10 @@ async def create_notification(data: dict, current_user: User = Depends(verify_de
             status_code=403, detail="Not authorized to create notification for this user"
         )
 
+    # Check if the user exists
+    user = User.objects(id=user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
     try:
         notification = Notification_db(
             user_id=user_id,
@@ -37,7 +41,7 @@ async def create_notification(data: dict, current_user: User = Depends(verify_de
         else:
             count_obj.count = str(int(count_obj.count) + 1)
         count_obj.save()
-        await FCMManager.send_notification(
+        success = await FCMManager.send_notification(
             user_id=user_id,
             title=title,
             body=message,
@@ -46,7 +50,7 @@ async def create_notification(data: dict, current_user: User = Depends(verify_de
                 "notification_id": str(notification.id)
             }
         )
-        return {"message": "Notification created successfully", "notification": notification.to_dict()}
+        return {"message": "Notification created successfully", "notification": notification.to_dict(), "fcm": success}
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"An unexpected error occurred: {str(e)}")

@@ -10,8 +10,8 @@ from models import RefreshToken, User
 JWT_SECRET_KEY = env_variables.get("JWT_SECRET", "supersecretkey")
 REJWT_SECRET_KEY = env_variables.get("REJWT_SECRET", "supersecretkey")
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_DAYS = 1
-REFRESH_TOKEN_EXPIRE_DAYS = 5
+ACCESS_TOKEN_EXPIRE_DAYS = 10
+REFRESH_TOKEN_EXPIRE_DAYS = 30
 
 # Define OAuth2 scheme
 # for accepting tokins
@@ -20,14 +20,14 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 async def create_access_token(user_id: str):
     """Generate a short-lived JWT access token."""
-    expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_DAYS)
+    expire = datetime.utcnow() + timedelta(days=ACCESS_TOKEN_EXPIRE_DAYS)
     payload = {"sub": user_id, "exp": expire, "type": "access"}
     return jwt.encode(payload, JWT_SECRET_KEY, algorithm=ALGORITHM)
 
 
 async def create_refresh_token(user_id: str, device_id: str):
     """Generate a long-lived JWT refresh token and store in database."""
-    expire = datetime.utcnow() + timedelta(minutes=REFRESH_TOKEN_EXPIRE_DAYS)
+    expire = datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
     token_id = hashlib.sha256(f"{user_id}:{device_id}:{
                               time.time()}".encode()).hexdigest()
 

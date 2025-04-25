@@ -67,9 +67,9 @@ class FCMManager:
         """Remove an FCM token for a user and device"""
         try:
             FCMToken_db.objects(user_id=user_id, device_id=device_id).delete()
-            return True , None
+            return True, None
         except Exception as e:
-            return False , (f"Error removing FCM token: {str(e)}")  
+            return False, (f"Error removing FCM token: {str(e)}")
 
     @staticmethod
     async def remove_all_tokens(user_id: str, except_device_id: Optional[str] = None) -> bool:
@@ -106,7 +106,7 @@ class FCMManager:
 
             # Extract just the tokens
             tokens = [t["token"] for t in tokens_data]
-
+            print(f"Tokens: {tokens}")
             # Create message
             message = messaging.MulticastMessage(
                 notification=messaging.Notification(
