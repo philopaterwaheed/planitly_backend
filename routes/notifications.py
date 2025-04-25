@@ -41,7 +41,7 @@ async def create_notification(data: dict, current_user: User = Depends(verify_de
         else:
             count_obj.count = str(int(count_obj.count) + 1)
         count_obj.save()
-        success = await FCMManager.send_notification(
+        fcm_message = await FCMManager.send_notification(
             user_id=user_id,
             title=title,
             body=message,
@@ -50,7 +50,7 @@ async def create_notification(data: dict, current_user: User = Depends(verify_de
                 "notification_id": str(notification.id)
             }
         )
-        return {"message": "Notification created successfully", "notification": notification.to_dict(), "fcm": success}
+        return {"message": "Notification created successfully", "notification": notification.to_dict() , "fcm_message": fcm_message}
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"An unexpected error occurred: {str(e)}")

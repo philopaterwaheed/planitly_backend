@@ -97,60 +97,56 @@ class FCMManager:
 
     @staticmethod
     async def send_notification(user_id: str, title: str, body: str, data: Optional[Dict] = None) -> Dict:
-        """Send notification to all user devices"""
+        """Send notification to all user devices, one message per token"""
         try:
             # Get all tokens for the user
             tokens_data = await FCMManager.get_user_tokens(user_id)
             if not tokens_data:
                 return {"success": 0, "failure": 0, "message": "No tokens found"}
 
-            # Extract just the tokens
-            tokens = [t["token"] for t in tokens_data]
-            print(f"Tokens: {tokens}")
-            # Create message
-            message = messaging.MulticastMessage(
-                notification=messaging.Notification(
-                    title=title,
-                    body=body
-                ),
-                data=data or {},
-                tokens=tokens
-            )
+            success_count = 0
+            failure_count = 0
 
-            # Send the message
-            response = messaging.send_multicast(message)
+            for token_data in tokens_data:
+                token = token_data["token"]
 
-            # Process responses and remove invalid tokens
-            if response.failure_count > 0:
-                for idx, result in enumerate(response.responses):
-                    if not result.success:
-                        error = result.exception
-                        if hasattr(error, 'cause') and isinstance(error.cause, messaging.UnregisteredError):
-                            # Token is no longer valid, find and remove it
-                            invalid_token = tokens[idx]
-                            # Find the device_id for this token
-                            token_doc = FCMToken_db.objects(
-                                token=invalid_token).first()
-                            if token_doc:
-                                await FCMManager.remove_token(user_id, token_doc.device_id)
+                # Create message for each token
+                message = messaging.Message(
+                    notification=messaging.Notification(
+                        title=title,
+                        body=body
+                    ),
+                    data=data or {},
+                    token=token
+                )
+
+                # Send the message
+                try:
+                    messaging.send(message)
+                    success_count += 1
+                except messaging.FirebaseError as e:
+                    failure_count += 1
+                    if isinstance(e.cause, messaging.UnregisteredError):
+                        # Token is no longer valid, remove it
+                        await FCMManager.remove_token(user_id, token_data["device_id"])
 
             return {
-                "success": response.success_count,
-                "failure": response.failure_count,
-                "message": "Notification sent"
+                "success": success_count,
+                "failure": failure_count,
+                "message": "Notifications sent"
             }
         except Exception as e:
             print(f"Error sending notification: {str(e)}")
             return {"success": 0, "failure": 0, "message": f"Error: {str(e)}"}
 
     @staticmethod
-    async def send_login_notification(user_id: str, device_id: str, location: Optional[str] = None) -> bool:
-        """Send login notification to all other devices"""
+    async def send_login_notification(user: User, device_id: str, location: Optional[str] = None) -> Dict:
+        """Send login notification to all other devices, one message per token"""
         try:
             # Get user
-            user = User.objects(id=user_id).first()
+            # todo insted of search pass the user from login
             if not user:
-                return False
+                return {"success": 0, "failure": 0, "message": "User not found"}
 
             # Prepare notification content
             device_info = location or "Unknown location"
@@ -163,29 +159,45 @@ class FCMManager:
             }
 
             # Get all tokens except the current device
-            tokens_data = await FCMManager.get_user_tokens(user_id)
+            tokens_data = await FCMManager.get_user_tokens(user.id)
             other_devices = [
                 t for t in tokens_data if t["device_id"] != device_id]
 
             if not other_devices:
-                return True  # No other devices to notify
+                return {"success": 0, "failure": 0, "message": "No other devices to notify"}
 
-            tokens = [t["token"] for t in other_devices]
+            success_count = 0
+            failure_count = 0
 
-            # Create message
-            message = messaging.MulticastMessage(
-                notification=messaging.Notification(
-                    title=title,
-                    body=body
-                ),
-                data=data,
-                tokens=tokens
-            )
+            for token_data in other_devices:
+                token = token_data["token"]
 
-            # Send the message
-            response = messaging.send_multicast(message)
-            return response.success_count > 0
+                # Create message for each token
+                message = messaging.Message(
+                    notification=messaging.Notification(
+                        title=title,
+                        body=body
+                    ),
+                    data=data,
+                    token=token
+                )
+
+                # Send the message
+                try:
+                    messaging.send(message)
+                    success_count += 1
+                except messaging.FirebaseError as e:
+                    failure_count += 1
+                    if isinstance(e.cause, messaging.UnregisteredError):
+                        # Token is no longer valid, remove it
+                        await FCMManager.remove_token(user.id, token_data["device_id"])
+
+            return {
+                "success": success_count,
+                "failure": failure_count,
+                "message": "Login notifications sent"
+            }
 
         except Exception as e:
             print(f"Error sending login notification: {str(e)}")
-            return False
+            return {"success": 0, "failure": 0, "message": f"Error: {str(e)}"}

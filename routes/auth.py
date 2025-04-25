@@ -153,7 +153,7 @@ async def login_user(user_data: dict, request: Request):
 
         # Get device ID for the refresh token
         refresh_token = await create_refresh_token(user_id_str, device_id)
-        await FCMManager.send_login_notification(user_id_str, device_id)
+        await FCMManager.send_login_notification(user, device_id)
 
         return {
             "message": "Login successful",
