@@ -9,8 +9,9 @@ router = APIRouter(prefix="/subjects", tags=["Subjects"])
 
 
 @router.post("/", dependencies=[Depends(verify_device)], status_code=status.HTTP_201_CREATED)
-async def create_subject(data: dict, current_user: User = Depends(verify_device)):
+async def create_subject(data: dict, user_device: tuple = Depends(verify_device)):
     # for if the user didn't create an id himself
+    current_user = user_device[0]
     try:
         sub_id = data.get("id") or 0
         sub_name = data.get("name") or None
@@ -37,7 +38,7 @@ async def create_subject(data: dict, current_user: User = Depends(verify_device)
         raise HTTPException(
             status_code=500, detail=f"An unexpected error occurred: {str(e)}")
 
-
+#todo check the security of this route
 @router.get("/{subject_id}", status_code=status.HTTP_200_OK, dependencies=[Depends(verify_device)])
 async def get_subject(subject_id: str):
     """Retrieve a subject by its ID."""
@@ -64,7 +65,8 @@ async def get_all_subjects():
 
 
 @router.get("/user/{user_id}", status_code=status.HTTP_200_OK)
-async def get_user_subjects(user_id: str, current_user=Depends(verify_device)):
+async def get_user_subjects(user_id: str, user_device: tuple =Depends(verify_device)):
+    current_user = user_device[0]
     try:
         """Retrieve subjects for a specific user."""
         if str(current_user.id) == user_id or current_user.admin:
@@ -78,8 +80,9 @@ async def get_user_subjects(user_id: str, current_user=Depends(verify_device)):
 
 
 @router.put("/{subject_id}", status_code=status.HTTP_200_OK)
-async def update_subject(subject_id: str, data: dict, current_user=Depends(verify_device)):
+async def update_subject(subject_id: str, data: dict, user_device: tuple =Depends(verify_device)):
     """Update a subject by its ID."""
+    current_user = user_device[0]
     try:
         subject = Subject_db.objects.get(id=subject_id)
         if str(current_user.id) == str(subject.owner) or current_user.admin:
@@ -98,8 +101,9 @@ async def update_subject(subject_id: str, data: dict, current_user=Depends(verif
 
 
 @router.delete("/{subject_id}", status_code=status.HTTP_200_OK)
-async def delete_subject(subject_id: str, current_user=Depends(verify_device)):
+async def delete_subject(subject_id: str, user_device: tuple =Depends(verify_device)):
     """Delete a subject and its associated components."""
+    current_user = user_device[0]
     try:
         subject = Subject_db.objects.get(id=subject_id)
         # Check if subject exists

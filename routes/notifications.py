@@ -8,8 +8,9 @@ router = APIRouter(prefix="/notifications", tags=["Notification"])
 
 
 @router.post("/", status_code=status.HTTP_201_CREATED)
-async def create_notification(data: dict, current_user: User = Depends(verify_device)):
+async def create_notification(data: dict, user_device: tuple = Depends(verify_device)):
     """Create a new notification for a user."""
+    current_user = user_device[0]
     user_id = data.get("user_id")
 
     title = data.get("title")
@@ -58,10 +59,11 @@ async def create_notification(data: dict, current_user: User = Depends(verify_de
 
 @router.get("/", status_code=status.HTTP_200_OK)
 async def get_notifications(
-    current_user: User = Depends(verify_device),
+    user_device: tuple = Depends(verify_device),
     limit: int = Query(20, ge=1),
     offset: int = Query(0, ge=0)
 ):
+    current_user = user_device[0]
     try:
         if not current_user.admin and limit > 20:
             limit = 20
@@ -81,8 +83,9 @@ async def get_notifications(
 
 
 @router.put("/{notification_id}/mark-read", status_code=status.HTTP_200_OK)
-async def mark_notification_as_read(notification_id: str, current_user: User = Depends(verify_device)):
+async def mark_notification_as_read(notification_id: str, user_device: tuple = Depends(verify_device)):
     """Mark a notification as read."""
+    current_user = user_device[0]
     try:
         notification = Notification_db.objects.get(
             id=notification_id, user_id=str(current_user.id))
@@ -101,8 +104,9 @@ async def mark_notification_as_read(notification_id: str, current_user: User = D
 
 
 @router.delete("/{notification_id}", status_code=status.HTTP_200_OK)
-async def delete_notification(notification_id: str, current_user: User = Depends(verify_device)):
+async def delete_notification(notification_id: str, user_device: tuple = Depends(verify_device)):
     """Delete a notification."""
+    current_user = user_device[0]
     try:
         notification = Notification_db.objects.get(
             id=notification_id, user_id=str(current_user.id))
@@ -125,15 +129,16 @@ async def delete_notification(notification_id: str, current_user: User = Depends
 
 
 @router.post("/register-fcm-token", status_code=status.HTTP_200_OK)
-async def register_fcm_token(request: Request, token_data: dict, current_user: User = Depends(verify_device)):
+async def register_fcm_token(request: Request, token_data: dict, user_device: tuple = Depends(verify_device)):
     """Register a Firebase Cloud Messaging token for the current device"""
+    current_user = user_device[0]
     try:
         fcm_token = token_data.get("fcm_token")
         if not fcm_token:
             raise HTTPException(
                 status_code=400, detail="FCM token is required")
 
-        device_id = get_device_identifier(request)
+        device_id = user_device[1]
         if not device_id:
             raise HTTPException(
                 status_code=400, detail="Either device_id or request is required")

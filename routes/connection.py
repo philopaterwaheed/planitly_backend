@@ -7,7 +7,8 @@ router = APIRouter(prefix="/connections", tags=["Connections"])
 
 
 @router.post("/", dependencies=[Depends(verify_device)], status_code=status.HTTP_201_CREATED)
-async def create_connection(data: dict, current_user: User = Depends(verify_device)):
+async def create_connection(data: dict, user_device: tuple = Depends(verify_device)):
+    current_user = user_device[0]
     if 'source_subject' not in data or 'target_subject' not in data:
         raise HTTPException(
             status_code=400, detail="Source and Target subjects are required")
@@ -78,8 +79,9 @@ async def get_all_connections():
 
 
 @router.delete("/{connection_id}", status_code=status.HTTP_200_OK)
-async def delete_connection(connection_id: str, current_user: User = Depends(verify_device)):
+async def delete_connection(connection_id: str, user_device: tuple = Depends(verify_device)):
     """Delete a connection and remove it from the source and target subjects."""
+    current_user = user_device[0]
     try:
         connection = Connection_db.objects.get(id=connection_id)
         if str(current_user.id) == str(connection.owner) or current_user.admin:

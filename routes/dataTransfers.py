@@ -10,7 +10,8 @@ router = APIRouter(prefix="/datatransfers", tags=["DataTransfer"])
 
 
 @router.post("/", dependencies=[Depends(verify_device)], status_code=status.HTTP_201_CREATED)
-async def create_data_transfer(data: dict, current_user: User = Depends(verify_device)):
+async def create_data_transfer(data: dict, user_device: tuple = Depends(verify_device)):
+    current_user = user_device[0]
     try:
         data_id = data.get('id', str(uuid.uuid4()))
         source_component_id = data.get('source_component') or 1
@@ -77,8 +78,9 @@ async def create_data_transfer(data: dict, current_user: User = Depends(verify_d
 
 
 @router.get("/{transfer_id}", dependencies=[Depends(verify_device)], status_code=status.HTTP_200_OK)
-async def get_data_transfer(transfer_id: str, current_user: User = Depends(verify_device)):
+async def get_data_transfer(transfer_id: str, user_device: tuple = Depends(verify_device)):
     """ Retrieve a data transfer by its ID. """
+    current_user = user_device[0]
     try:
         data_transfer = DataTransfer_db.objects.get(id=transfer_id)
         if (current_user.id != data_transfer.source_component.owner and
@@ -94,15 +96,16 @@ async def get_data_transfer(transfer_id: str, current_user: User = Depends(verif
 
 
 @router.get("/", dependencies=[Depends(verify_device), Depends(admin_required)], status_code=status.HTTP_200_OK)
-async def get_all_data_transfers(current_user=Depends(verify_device)):
+async def get_all_data_transfers(user_device: tuple =Depends(verify_device)):
     """ Retrieve all data transfers. """
     data_transfers = DataTransfer_db.objects()
     return [dt.to_mongo().to_dict() for dt in data_transfers]
 
 
 @router.delete("/{transfer_id}", dependencies=[Depends(verify_device)], status_code=status.HTTP_200_OK)
-async def delete_data_transfer(transfer_id: str, current_user=Depends(verify_device)):
+async def delete_data_transfer(transfer_id: str, user_device: tuple =Depends(verify_device)):
     """Delete a data transfer."""
+    current_user = user_device[0]
     try:
         data_transfer = DataTransfer_db.objects.get(id=transfer_id)
         if (current_user.id != data_transfer.source_component.owner and

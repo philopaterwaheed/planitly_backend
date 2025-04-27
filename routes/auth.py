@@ -170,10 +170,11 @@ async def login_user(user_data: dict, request: Request):
 
 
 @router.post("/logout-device", status_code=status.HTTP_200_OK)
-async def logout_device(request: Request, current_user: User = Depends(verify_device)):
+async def logout_device(request: Request, user_device: tuple = Depends(verify_device)):
     """Logout from a specific device"""
     try:
-        device_id = get_device_identifier(request)
+        current_user = user_device[0]
+        device_id = user_device[1]
         if not device_id:
             raise HTTPException(
                 status_code=400, detail="Device ID is required")
@@ -191,8 +192,9 @@ async def logout_device(request: Request, current_user: User = Depends(verify_de
 
 
 @router.post("/reset-security", status_code=status.HTTP_200_OK)
-async def reset_security(current_user: User = Depends(verify_device)):
+async def reset_security(user_device: tuple = Depends(verify_device)):
     """Reset security settings for a user (clear invalid attempts)"""
+    current_user = user_device[0]
     try:
         current_user.reset_invalid_attempts()
         return {"message": "Security settings reset successfully"}
@@ -202,8 +204,9 @@ async def reset_security(current_user: User = Depends(verify_device)):
 
 
 @router.get("/devices", status_code=status.HTTP_200_OK)
-async def get_devices(current_user: User = Depends(get_current_user)):
+async def get_devices(user_device: tuple = Depends(get_current_user)):
     """Get all registered devices for the user"""
+    current_user = user_device[0]
     try:
         return {"devices": current_user.devices}
 
@@ -212,11 +215,12 @@ async def get_devices(current_user: User = Depends(get_current_user)):
 
 
 @router.post("/clear-devices", status_code=status.HTTP_200_OK)
-async def clear_all_devices(request: Request, current_user: User = Depends(get_current_user)):
+async def clear_all_devices(request: Request, user_device: tuple = Depends(get_current_user)):
     """Clear all registered devices except the current one"""
+    current_user = user_device[0]
     try:
         # Keep only the current device
-        current_device = get_device_identifier(request)
+        current_device = user_device[1]
         if current_device in current_user.devices:
             current_user.devices = [current_device]
         else:

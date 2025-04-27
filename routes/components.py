@@ -8,7 +8,8 @@ router = APIRouter(prefix="/components", tags=["Components"])
 
 
 @router.post("/", dependencies=[Depends(verify_device)], status_code=status.HTTP_201_CREATED)
-async def create_component(data: dict, current_user: User = Depends(verify_device)):
+async def create_component(data: dict, user_device: tuple = Depends(verify_device)):
+    current_user = user_device[0]
     try:
         # check if the component already exists
         if 'id' in data and Component.load_from_db(data['id']):
@@ -57,8 +58,9 @@ async def get_all_components():
 
 
 @router.delete("/{component_id}", status_code=status.HTTP_200_OK)
-async def delete_component(component_id: str, current_user=Depends(verify_device)):
+async def delete_component(component_id: str, user_device: tuple =Depends(verify_device)):
     """Delete a component and remove it from its host subject."""
+    current_user = user_device[0]
     try:
 
         component = Component_db.objects.get(id=component_id)

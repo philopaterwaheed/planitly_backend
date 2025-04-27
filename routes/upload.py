@@ -6,7 +6,7 @@ from middleWares import verify_device
 router = APIRouter(prefix="/photos", tags=["Photos"])
 
 @router.post("/upload", status_code=status.HTTP_201_CREATED)
-async def upload_photo(file: UploadFile = File(...) , current_user=Depends(verify_device )):
+async def upload_photo(file: UploadFile = File(...) , user_device : tuple =Depends(verify_device )):
     """Upload a photo to Cloudinary."""
     try:
         # Read the file content

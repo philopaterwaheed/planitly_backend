@@ -14,7 +14,9 @@ router = APIRouter(prefix="/widgets", tags=["Widget"])
 
 
 @router.post("/", dependencies=[Depends(verify_device)], status_code=status.HTTP_201_CREATED)
-async def create_widget(data: dict, current_user: User = Depends(verify_device)):
+async def create_widget(data: dict, user_device: tuple = Depends(verify_device)):
+    current_user = user_device[0]
+    current_device = user_device[1]
     try:
         data_id = data.get('id', str(uuid.uuid4()))
         widget_type = data.get('type')
@@ -90,7 +92,8 @@ async def create_widget(data: dict, current_user: User = Depends(verify_device))
 
 
 @router.get("/{widget_id}", dependencies=[Depends(verify_device)], status_code=status.HTTP_200_OK)
-async def get_widget(widget_id: str, current_user: User = Depends(verify_device)):
+async def get_widget(widget_id: str, user_device: tuple  = Depends(verify_device)):
+    current_user = user_device[0]
     try:
         widget = Widget_db.objects.get(id=widget_id)
         if widget.owner != current_user.id and not current_user.admin:
@@ -107,10 +110,11 @@ async def get_widget(widget_id: str, current_user: User = Depends(verify_device)
 
 @router.get("/", dependencies=[Depends(verify_device)], status_code=status.HTTP_200_OK)
 async def get_all_widgets(
-    current_user=Depends(verify_device),
+    user_device: tuple =Depends(verify_device),
     host_subject: str = None,
     widget_type: str = None
 ):
+    current_user = user_device[0]
     query = {"owner": current_user.id}
 
     if host_subject:
@@ -124,7 +128,8 @@ async def get_all_widgets(
 
 
 @router.delete("/{widget_id}", dependencies=[Depends(verify_device)], status_code=status.HTTP_200_OK)
-async def delete_widget(widget_id: str, current_user=Depends(verify_device)):
+async def delete_widget(widget_id: str, user_device: tuple =Depends(verify_device)):
+    current_user = current_user[0]
     try:
         widget = Widget_db.objects.get(id=widget_id)
         if widget.owner != current_user.id and not current_user.admin:
@@ -151,8 +156,9 @@ async def delete_widget(widget_id: str, current_user=Depends(verify_device)):
 async def update_daily_todo_date(
     widget_id: str,
     date_data: dict,
-    current_user=Depends(verify_device)
+    user_device: tuple =Depends(verify_device)
 ):
+    current_user = user_device[0]
     try:
         widget = Widget_db.objects.get(id=widget_id)
 
@@ -203,8 +209,9 @@ async def update_daily_todo_date(
 async def get_todos(
     widget_id: str,
     date: Optional[str] = None,
-    current_user=Depends(verify_device)
+    user_device: tuple =Depends(verify_device)
 ):
+    current_user = user_device[0]
     try:
         widget = Widget_db.objects.get(id=widget_id)
 
@@ -251,8 +258,9 @@ async def get_todos(
 async def add_todo_item(
     widget_id: str,
     todo_data: dict,
-    current_user=Depends(verify_device)
+    user_device: tuple =Depends(verify_device)
 ):
+    current_user = user_device[0]
     try:
         widget = Widget_db.objects.get(id=widget_id)
 
@@ -305,8 +313,9 @@ async def update_todo_item(
     widget_id: str,
     todo_id: str,
     todo_data: dict,
-    current_user=Depends(verify_device)
+    user_device: tuple =Depends(verify_device)
 ):
+    current_user = user_device[0]
     try:
         # Verify widget exists and user has access
         widget = Widget_db.objects.get(id=widget_id)
@@ -351,8 +360,9 @@ async def update_todo_item(
 async def delete_todo_item(
     widget_id: str,
     todo_id: str,
-    current_user=Depends(verify_device)
+    user_device: tuple =Depends(verify_device)
 ):
+    current_user = user_device[0]
     try:
         # Verify widget exists and user has access
         widget = Widget_db.objects.get(id=widget_id)
@@ -385,8 +395,9 @@ async def get_todos_in_range(
     widget_id: str,
     start_date: str,
     end_date: str,
-    current_user=Depends(verify_device)
+    user_device: tuple =Depends(verify_device)
 ):
+    current_user = user_device[0]
     try:
         widget = Widget_db.objects.get(id=widget_id)
 
@@ -438,8 +449,9 @@ async def get_todos_in_range(
 async def update_table_columns(
     widget_id: str,
     columns_data: dict,
-    current_user=Depends(verify_device)
+    user_device: tuple =Depends(verify_device)
 ):
+    current_user = user_device[0]
     try:
         widget = Widget_db.objects.get(id=widget_id)
 
@@ -479,8 +491,9 @@ async def update_table_columns(
 async def add_table_row(
     widget_id: str,
     row_data: dict,
-    current_user=Depends(verify_device)
+    user_device: tuple =Depends(verify_device)
 ):
+    current_user = user_device[0]
     try:
         widget = Widget_db.objects.get(id=widget_id)
 
@@ -530,11 +543,12 @@ async def update_table_row(
     widget_id: str,
     row_id: str,
     row_data: dict,
-    current_user=Depends(verify_device)
+    user_device: tuple =Depends(verify_device)
 ):
     try:
         widget = Widget_db.objects.get(id=widget_id)
 
+        current_user = user_device[0]
         if widget.owner != current_user.id and not current_user.admin:
             raise HTTPException(
                 status_code=403, detail="Not authorized to update this widget")
@@ -578,8 +592,9 @@ async def update_table_row(
 async def delete_table_row(
     widget_id: str,
     row_id: str,
-    current_user=Depends(verify_device)
+    user_device: tuple =Depends(verify_device)
 ):
+    current_user = user_device[0]
     try:
         widget = Widget_db.objects.get(id=widget_id)
 
@@ -618,8 +633,9 @@ async def delete_table_row(
 @router.get("/{widget_id}/component-data", dependencies=[Depends(verify_device)], status_code=status.HTTP_200_OK)
 async def get_component_data(
     widget_id: str,
-    current_user=Depends(verify_device)
+    user_device: tuple =Depends(verify_device)
 ):
+    current_user = user_device[0]
     try:
         widget = Widget_db.objects.get(id=widget_id)
 
@@ -657,8 +673,9 @@ async def get_component_data(
 async def update_text_field_content(
     widget_id: str,
     content_data: dict,
-    current_user=Depends(verify_device)
+    user_device: tuple =Depends(verify_device)
 ):
+    current_user = user_device[0]
     try:
         widget = Widget_db.objects.get(id=widget_id)
 
@@ -711,8 +728,9 @@ async def update_text_field_content(
 @router.get("/{widget_id}/text-field", dependencies=[Depends(verify_device)], status_code=status.HTTP_200_OK)
 async def get_text_field_content(
     widget_id: str,
-    current_user=Depends(verify_device)
+    user_device: tuple =Depends(verify_device)
 ):
+    current_user = user_device[0]
     try:
         widget = Widget_db.objects.get(id=widget_id)
 
@@ -766,9 +784,10 @@ async def get_text_field_content(
 async def create_photo_widget(
     data: dict,
     file: UploadFile = File(None),  # Optional photo upload
-    current_user: User = Depends(verify_device)
+    user_device : tuple= Depends(verify_device)
 ):
     """Create a new photo widget."""
+    current_user = user_device[0]
     try:
         host_subject_id = data.get("host_subject")
         if not host_subject_id:
@@ -806,8 +825,9 @@ async def create_photo_widget(
 
 
 @router.get("/{widget_id}/photo-widget", dependencies=[Depends(verify_device)], status_code=status.HTTP_200_OK)
-async def get_photo_widget(widget_id: str, current_user: User = Depends(verify_device)):
+async def get_photo_widget(widget_id: str, user_device: tuple = Depends(verify_device)):
     """Retrieve a photo widget."""
+    current_user = user_device[0]
     try:
         widget = Widget_db.objects.get(id=widget_id)
 

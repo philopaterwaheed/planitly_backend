@@ -181,11 +181,11 @@ async def authenticate_user(username_or_email: str, password: str, device_id=Non
 
 
 async def verify_device(request: Request, current_user: User = Depends(get_current_user)):
-    """Verify that the current device is registered for this user"""
+    """Verify that the current device is registered for this user and return the user and device ID"""
     device_id = get_device_identifier(request)
     if device_id not in current_user.devices:
         raise HTTPException(
             status_code=403,
             detail="Unrecognized device. Please login again."
         )
-    return current_user
+    return current_user, device_id
