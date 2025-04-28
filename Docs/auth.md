@@ -119,4 +119,8 @@
 | devices          | list    | false    | List of registered devices.              |
 | invalid_attempts | int     | false    | Number of failed login attempts.         |
 | last_reset       | string  | false    | Timestamp of the last security reset.    |
+| firstname        | string  | false    | The first name of the user.              |
+| lastname         | string  | false    | The last name of the user.               |
+| phone_number     | string  | false    | The phone number of the user.            |
+| birthday         | string  | false    | The birthday of the user (ISO format).   |
 

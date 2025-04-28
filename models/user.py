@@ -12,8 +12,11 @@ class User(Document):
     admin = BooleanField(default=False, required=False)
     devices = ListField(StringField(), default=[], max_length=5)
     invalid_attempts = IntField(default=0)  # Count of invalid login attempts
-    # For tracking reset timing
-    last_reset = DateTimeField(default=datetime.datetime.utcnow)
+    last_reset = DateTimeField(default=datetime.datetime.utcnow)  
+    firstname = StringField(required=True)
+    lastname = StringField(required=True)
+    phone_number = StringField(required=True)
+    birthday = DateTimeField(required=True)
 
     meta = {'collection': 'users'}
 

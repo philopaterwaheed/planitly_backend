@@ -72,37 +72,93 @@ async def create_default_subjects_for_user(user_id):
 @router.post("/register", status_code=status.HTTP_201_CREATED)
 async def register(user_data: dict, request: Request):
     """Register a new user with device tracking."""
-    # todo add this to the get user
-
     try:
         username = user_data.get("username")
         email = user_data.get("email")
         password = user_data.get("password")
+        firstname = user_data.get("firstName")
+        lastname = user_data.get("lastName")
+        phone_number = user_data.get("phoneNumber")
+        birthday = user_data.get("birthday")
 
         if not username or not email or not password:
             raise HTTPException(
-                status_code=400, detail="All fields are required.")
+                status_code=400, detail="Username, email, and password are required."
+            )
 
         if not re.match(r"^(?=.*[a-zA-Z])[a-zA-Z0-9_.-]+$", username):
             raise HTTPException(
                 status_code=400,
                 detail="Username must contain at least one letter and can only include letters, numbers, underscores, dots, and hyphens."
             )
+
         if not re.match(r"^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*[@$!%*?&^#_+=<>.,;:|\\/-])[A-Za-z\d@$!%*?&^#_+=<>.,;:|\\/-]{8,}$", password):
             raise HTTPException(
-                status_code=400, detail="Weak password. Must contain uppercase, lowercase, number, special character, and be at least 8 characters long.")
+                status_code=400, detail="Weak password. Must contain uppercase, lowercase, number, special character, and be at least 8 characters long."
+            )
+
+        if firstname and not firstname.isalpha():
+            raise HTTPException(
+                status_code=400, detail="First name must contain only alphabetic characters."
+            )
+
+        if lastname and not lastname.isalpha():
+            raise HTTPException(
+                status_code=400, detail="Last name must contain only alphabetic characters."
+            )
+
+        if phone_number and not re.match(r"^\+?[1-9]\d{1,14}$", phone_number):
+            raise HTTPException(
+                status_code=400, detail="Invalid phone number format."
+            )
+
+        if birthday:
+            try:
+                if not isinstance(birthday, str):
+                    birthday = datetime.strptime(birthday, "%Y-%m-%d %H:%M:%S")
+
+                print (birthday)
+                print (type(birthday))
+                birthday_date = datetime.datetime.fromisoformat(birthday)
+                if birthday_date > datetime.datetime.now():
+                    raise HTTPException(
+                        status_code=400, detail="Birthday cannot be in the future."
+                    )
+                if (datetime.datetime.now() - birthday_date).days < 13 * 365:
+                    raise HTTPException(
+                        status_code=400, detail="Users must be at least 13 years old."
+                    )
+            except ValueError:
+                raise HTTPException(
+                    status_code=400, detail="Invalid birthday format. Use ISO format (YYYY-MM-DD)."
+                )
+        else: 
+                raise HTTPException(
+                    status_code=400, detail="Messing birthday"
+                )
+
         try:
             user = User.objects.filter(
-                __raw__={"$or": [{"email": email},
-                                 {"username": username}]}
+                __raw__={"$or": [{"email": email}, {"username": username}]}
             ).first()
 
             if user:
                 raise HTTPException(
-                    status_code=409, detail="Username or email already exists.")
+                    status_code=409, detail="Username or email already exists."
+                )
+
             firebase_uid = (await node_firebase(email, password, "register")).json().get("firebase_uid")
-            user = User(id=str(uuid.uuid4()), firebase_uid=firebase_uid, username=username,
-                        email=email, email_verified=False)
+            user = User(
+                id=str(uuid.uuid4()),
+                firebase_uid=firebase_uid,
+                username=username,
+                email=email,
+                email_verified=False,
+                firstname=firstname,
+                lastname=lastname,
+                phone_number=phone_number,
+                birthday=birthday_date if birthday else None,
+            )
 
             # Add the current device
             device_id = get_device_identifier(request)
@@ -112,25 +168,28 @@ async def register(user_data: dict, request: Request):
 
             # Create default subjects for the new user
             subjects_created = await create_default_subjects_for_user(str(user.id))
-            return ({
+            return {
                 "message": "User registered successfully",
                 "default_subjects_created": subjects_created,
-                "status_code": 201
-            })
+                "status_code": 201,
+            }
         except FirebaseAuthError as e:
             raise e
 
     except ValidationError:
         await revert_firebase_user(firebase_uid)
         raise HTTPException(
-            status_code=400, detail="Invalid data provided.")
+            status_code=400, detail="Invalid data provided."
+        )
     except NotUniqueError:
         await revert_firebase_user(firebase_uid)
         raise HTTPException(
-            status_code=409, detail="username or email already exists.")
+            status_code=409, detail="Username or email already exists."
+        )
     except FirebaseAuthError as e:
         raise HTTPException(
-            status_code=e.status_code, detail=e.message)
+            status_code=e.status_code, detail=e.message
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
