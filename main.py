@@ -8,7 +8,7 @@ from pytz import UTC
 from models import User, Component, Subject, Subject_db, DataTransfer, DataTransfer_db, Connection_db, Connection, MONGO_HOST
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
-from routes import subjects, components, auth, dataTransfers, connection, widget, notifications
+from routes import subjects, components, auth, dataTransfers, connection, widget, notifications , profile
 import os
 import logging
 from mongoengine import connect, disconnect
@@ -200,6 +200,7 @@ app.include_router(connection.router)
 app.include_router(dataTransfers.router)
 app.include_router(widget.router)
 app.include_router(notifications.router)
+app.include_router(profile.router)
 
 if __name__ == "__main__":
     run_server()

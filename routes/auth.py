@@ -117,8 +117,6 @@ async def register(user_data: dict, request: Request):
                 if not isinstance(birthday, str):
                     birthday = datetime.strptime(birthday, "%Y-%m-%d %H:%M:%S")
 
-                print (birthday)
-                print (type(birthday))
                 birthday_date = datetime.datetime.fromisoformat(birthday)
                 if birthday_date > datetime.datetime.now():
                     raise HTTPException(
