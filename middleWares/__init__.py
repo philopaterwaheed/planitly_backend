@@ -4,7 +4,7 @@ from fastapi import Request
 from fastapi import Depends, HTTPException
 from datetime import datetime, timedelta
 from jose import JWTError, ExpiredSignatureError, jwt  # Used for decoding JWT
-from models import User, RateLimit, RefreshToken
+from models import User, RateLimit, Device_db
 from models.locks import is_account_locked, lock_account
 from utils import oauth2_scheme, JWT_SECRET_KEY, ALGORITHM
 from fire import node_firebase
@@ -188,4 +188,12 @@ async def verify_device(request: Request, current_user: User = Depends(get_curre
             status_code=403,
             detail="Unrecognized device. Please login again."
         )
+    else:
+        # Device is recognized, proceed
+        # Optionally, you can update the last active time or any other logic here
+        device = Device_db.objects(device_id=device_id).first()
+        if device:
+            device.last_used = datetime.utcnow()
+            device.save()
     return current_user, device_id
+    #todo optimiztation handle returning the whole device object

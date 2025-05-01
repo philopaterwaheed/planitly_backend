@@ -11,3 +11,4 @@ firebase-admin
 requests
 python-multipart
 cloudinary
+geoip2

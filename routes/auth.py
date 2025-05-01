@@ -5,8 +5,9 @@ import re
 import datetime
 from mongoengine.errors import NotUniqueError, ValidationError
 from models import User, Subject, Component, FCMManager, RefreshToken
+from models.devices import Device_db  # Import the Device model
 from middleWares import authenticate_user, get_current_user,  get_device_identifier, verify_device
-from utils import create_access_token, create_refresh_token, verify_refresh_token,  logout_user
+from utils import create_access_token, create_refresh_token, verify_refresh_token,  logout_user , get_ip_info
 from models.templets import DEFAULT_USER_TEMPLATES
 from errors import revert_firebase_user, UserLogutError
 from fire import node_firebase
@@ -102,15 +103,27 @@ async def register(user_data: dict, request: Request):
             raise HTTPException(
                 status_code=400, detail="First name must contain only alphabetic characters."
             )
+        elif not firstname:
+            raise HTTPException(
+                status_code=400, detail="Messing first name"
+            )
 
         if lastname and not lastname.isalpha():
             raise HTTPException(
                 status_code=400, detail="Last name must contain only alphabetic characters."
             )
+        elif not lastname:
+            raise HTTPException(
+                status_code=400, detail="Messing last name"
+            )
 
         if phone_number and not re.match(r"^\+?[1-9]\d{1,14}$", phone_number):
             raise HTTPException(
                 status_code=400, detail="Invalid phone number format."
+            )
+        elif not phone_number:
+            raise HTTPException(
+                status_code=400, detail="Messing phone number"
             )
 
         if birthday:
@@ -200,11 +213,46 @@ async def login_user(user_data: dict, request: Request):
         password = user_data.get("password")
 
         device_id = get_device_identifier(request)
+        user_agent = request.headers.get(
+            "user-agent", "")  
+        client_ip = request.client.host
+        print (f"Client IP: {client_ip}")
+
+        # Optional: Get location data from IP
+        location = {}
+        try:
+            response = await get_ip_info(client_ip)
+            if not response.status_code == 200:
+                raise Exception(response)
+            response = response.json()
+            location = {
+            "country": response.get("country", "Unknown"),
+            "city": response.get("city", "Unknown"),
+            "region": response.get("region", "Unknown"),
+            }
+        except Exception as e:
+            print(f"Error retrieving location data: {str(e)}")
+            location = {
+                "country": "Unknown",
+                "city": "Unknown",
+                "region": "Unknown",
+            }
         user, error_message = await authenticate_user(username_or_email, password, device_id)
         if not user:
             raise HTTPException(status_code=401, detail=error_message)
-
         user_id_str = str(user.id)
+        # Track the device in the database
+        device = Device_db.objects(device_id=device_id).first()
+        if not device:
+            device = Device_db(
+                user_id=user_id_str,
+                device_id=device_id,
+                user_agent=user_agent,
+                location=location
+            )
+        device.last_used = datetime.datetime.utcnow()
+        device.save()
+
         # Generate JWT tokens
         access_token = await create_access_token(user_id_str)
 
@@ -261,11 +309,23 @@ async def reset_security(user_device: tuple = Depends(verify_device)):
 
 
 @router.get("/devices", status_code=status.HTTP_200_OK)
-async def get_devices(user_device: tuple = Depends(get_current_user)):
+async def get_devices(user_device: tuple = Depends(verify_device)):
     """Get all registered devices for the user"""
     current_user = user_device[0]
     try:
-        return {"devices": current_user.devices}
+        devices = Device_db.objects(user_id=str(current_user.id))
+        return {
+            "devices": [
+                {
+                    "device_id": device.device_id,
+                    "device_name": device.device_name,
+                    "user_agent": device.user_agent,
+                    "location": device.location,
+                    "last_used": device.last_used
+                }
+                for device in devices
+            ]
+        }
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -275,15 +335,11 @@ async def get_devices(user_device: tuple = Depends(get_current_user)):
 async def clear_all_devices(request: Request, user_device: tuple = Depends(get_current_user)):
     """Clear all registered devices except the current one"""
     current_user = user_device[0]
+    current_device = user_device[1]
     try:
-        # Keep only the current device
-        current_device = user_device[1]
-        if current_device in current_user.devices:
-            current_user.devices = [current_device]
-        else:
-            current_user.devices = []
-
-        current_user.save()
+        for device in current_user.devices:
+            if device.device_id != current_device:
+                await logout_user(current_user, device.device_id)
         return {"message": "All other devices have been logged out"}
 
     except Exception as e:

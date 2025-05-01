@@ -1,5 +1,6 @@
 from mongoengine import Document, StringField, EmailField, BooleanField, DateTimeField, IntField, ListField
 from .tokens import RefreshToken
+from .devices import Device_db
 import datetime
 
 
@@ -35,6 +36,7 @@ class User(Document):
             return False, "Device ID cannot be empty."
 
         if device_id in self.devices:
+            Device_db.objects(device_id=device_id, user_id=str(self.id)).delete()
             self.devices.remove(device_id)
             try:
                 RefreshToken.objects(device_id=device_id).delete()
