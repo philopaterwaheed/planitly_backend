@@ -281,10 +281,16 @@ async def logout_device(request: Request, user_device: tuple = Depends(verify_de
     """Logout from a specific device"""
     try:
         current_user = user_device[0]
-        device_id = user_device[1]
+        current_device_id = user_device[1]
+
+        # Check if the request body contains a device ID
+        body = await request.json()
+        device_id = body.get("device_id") if body else current_device_id
+
         if not device_id:
             raise HTTPException(
-                status_code=400, detail="Device ID is required")
+                status_code=400, detail="Device ID is required"
+            )
 
         await logout_user(current_user, device_id)
         return {"message": "Device logged out successfully"}
@@ -293,7 +299,8 @@ async def logout_device(request: Request, user_device: tuple = Depends(verify_de
         raise he
     except UserLogutError as e:
         raise HTTPException(
-            status_code=400, detail=str(e))
+            status_code=400, detail=str(e)
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
