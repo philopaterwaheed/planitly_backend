@@ -11,4 +11,6 @@ firebase-admin
 requests
 python-multipart
 cloudinary
-geoip2
+ua-parser-builtins
+ua-parser
+user-agents

@@ -4,14 +4,14 @@ import uuid
 import re
 import datetime
 from mongoengine.errors import NotUniqueError, ValidationError
-from models import User, Subject, Component, FCMManager, RefreshToken
-from models.devices import Device_db  # Import the Device model
+from models import User, Subject, Component, FCMManager, RefreshToken,  Device_db  
 from middleWares import authenticate_user, get_current_user,  get_device_identifier, verify_device
 from utils import create_access_token, create_refresh_token, verify_refresh_token,  logout_user , get_ip_info
 from models.templets import DEFAULT_USER_TEMPLATES
 from errors import revert_firebase_user, UserLogutError
 from fire import node_firebase
 from errors import FirebaseAuthError
+import user_agents
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
@@ -215,6 +215,9 @@ async def login_user(user_data: dict, request: Request):
         device_id = get_device_identifier(request)
         user_agent = request.headers.get(
             "user-agent", "")  
+        agent_info = user_agents.parse(user_agent)
+        print (f"User Agent: {agent_info}")
+        device_name = f"{agent_info.device.family} {agent_info.os.family} {agent_info.os.version_string}"
         client_ip = request.client.host
         print (f"Client IP: {client_ip}")
 
@@ -242,14 +245,13 @@ async def login_user(user_data: dict, request: Request):
             raise HTTPException(status_code=401, detail=error_message)
         user_id_str = str(user.id)
         # Track the device in the database
-        device = Device_db.objects(device_id=device_id).first()
-        if not device:
-            device = Device_db(
-                user_id=user_id_str,
-                device_id=device_id,
-                user_agent=user_agent,
-                location=location
-            )
+        device = Device_db(
+            user_id=user_id_str,
+            device_name=device_name,
+            device_id=device_id,
+            user_agent=user_agent,
+            location=location
+        )
         device.last_used = datetime.datetime.utcnow()
         device.save()
 
