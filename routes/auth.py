@@ -202,8 +202,7 @@ async def login_user(user_data: dict, request: Request):
         device_id = get_device_identifier(request)
         user, error_message = await authenticate_user(username_or_email, password, device_id)
         if not user:
-            raise HTTPException(
-                status_code=401, detail=error_message)
+            raise HTTPException(status_code=401, detail=error_message)
 
         user_id_str = str(user.id)
         # Generate JWT tokens
