@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from models import Subject_db
 from middleWares import verify_device, admin_required
-from models import User, Component, Component_db, Subject, Subject_db, DataTransfer, DataTransfer_db
+from models import User, Component, Component_db, Subject, Subject_db,Category_db
 from mongoengine.queryset.visitor import Q
 from mongoengine.errors import DoesNotExist, ValidationError
 
@@ -10,33 +10,36 @@ router = APIRouter(prefix="/subjects", tags=["Subjects"])
 
 @router.post("/", dependencies=[Depends(verify_device)], status_code=status.HTTP_201_CREATED)
 async def create_subject(data: dict, user_device: tuple = Depends(verify_device)):
-    # for if the user didn't create an id himself
+    """Create a new subject with an optional category."""
     current_user = user_device[0]
     try:
         sub_id = data.get("id") or 0
         sub_name = data.get("name") or None
         sub_tem = data.get("template") or None
+        category_name = data.get("category") or None
         if not sub_name:
-            raise HTTPException(
-                status_code=400, detail="Subject name is required")
-        if Subject_db.objects(
-            (Q(id=sub_id) | Q(name=data['name'], owner=current_user.id))
-        ).first():
-            raise HTTPException(
-                status_code=400, detail="Subject with this ID or name already exists")
+            raise HTTPException(status_code=400, detail="Subject name is required.")
 
-        # create a new subject from data and save it
-        subject = Subject(**data, owner=current_user.id)
+        # Validate the category name
+        if category_name:
+            category = Category_db.objects(name=category_name, owner=current_user.id).first()
+            if not category:
+                raise HTTPException(status_code=404, detail=f"Category '{category_name}' not found.")
+
+        subject = Subject(
+            name=sub_name,
+            owner=current_user.id,
+            template=sub_tem,
+            category=category_name,  # Store category name
+        )
         if sub_tem:
             await subject.apply_template(sub_tem)
         subject.save_to_db()
         return subject.to_json()
     except ValidationError as e:
-        raise HTTPException(
-            status_code=400, detail=f"Validation error: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Validation error: {str(e)}")
     except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"An unexpected error occurred: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
 
 #todo check the security of this route
 @router.get("/{subject_id}", status_code=status.HTTP_200_OK, dependencies=[Depends(verify_device)])
@@ -98,6 +101,67 @@ async def update_subject(subject_id: str, data: dict, user_device: tuple =Depend
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"An unexpected error occurred: {str(e)}")
+
+
+@router.put("/{subject_id}/change-category", status_code=status.HTTP_200_OK)
+async def change_subject_category(subject_id: str, data: dict, user_device: tuple = Depends(verify_device)):
+    """Change the category of a subject."""
+    current_user = user_device[0]
+    try:
+        new_category_name = data.get("category")
+        if not new_category_name:
+            raise HTTPException(status_code=400, detail="New category name is required.")
+
+        # Fetch the subject
+        subject = Subject_db.objects.get(id=subject_id)
+        if not subject:
+            raise HTTPException(status_code=404, detail="Subject not found.")
+
+        # Check if the subject has a template
+        if subject.template:
+            raise HTTPException(
+                status_code=403,
+                detail="Subjects with templates cannot have their category changed."
+            )
+
+        # Validate the new category
+        new_category = Category_db.objects(name=new_category_name, owner=current_user.id).first()
+        if not new_category:
+            raise HTTPException(status_code=404, detail=f"Category '{new_category_name}' not found.")
+
+        # Update the subject's category
+        subject.update(category=new_category_name)
+        return {"message": f"Subject category updated to '{new_category_name}'."}
+    except DoesNotExist:
+        raise HTTPException(status_code=404, detail="Subject not found.")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
+
+
+@router.put("/{subject_id}/remove-category", status_code=status.HTTP_200_OK)
+async def remove_subject_category(subject_id: str, user_device: tuple = Depends(verify_device)):
+    """Remove a subject from its category (set to 'Uncategorized')."""
+    current_user = user_device[0]
+    try:
+        # Fetch the subject
+        subject = Subject_db.objects.get(id=subject_id)
+        if not subject:
+            raise HTTPException(status_code=404, detail="Subject not found.")
+
+        # Check if the subject has a template
+        if subject.template:
+            raise HTTPException(
+                status_code=403,
+                detail="Subjects with templates cannot be removed from their category."
+            )
+
+        # Update the subject's category to 'Uncategorized'
+        subject.update(category="Uncategorized")
+        return {"message": "Subject category removed and set to 'Uncategorized'."}
+    except DoesNotExist:
+        raise HTTPException(status_code=404, detail="Subject not found.")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
 
 
 @router.delete("/{subject_id}", status_code=status.HTTP_200_OK)

@@ -1,5 +1,6 @@
 from .component import Component_db, Component, PREDEFINED_COMPONENT_TYPES
 from .widget import Widget_db, Widget
+from .category import Category_db
 import uuid
 from mongoengine import Document, StringField, DictField, ReferenceField, ListField, BooleanField, NULLIFY
 from mongoengine.errors import DoesNotExist, ValidationError
@@ -10,19 +11,19 @@ from .templets import TEMPLATES
 class Subject_db(Document):
     id = StringField(primary_key=True)
     name = StringField(required=True)
-    components = ListField(ReferenceField(
-        Component_db, reverse_delete_rule=NULLIFY))
-    widgets = ListField(ReferenceField(
-        Widget_db, reverse_delete_rule=NULLIFY))
+    components = ListField(ReferenceField(Component_db, reverse_delete_rule=NULLIFY))
+    widgets = ListField(ReferenceField(Widget_db, reverse_delete_rule=NULLIFY))
     owner = StringField(required=True)  # Store user ID
     template = StringField(required=False)
     is_deletable = BooleanField(default=True)
+    category = StringField(required=False)  # Store category name as a string
+
     meta = {'collection': 'subjects'}
 
 
 # Subject class helper to interact with the database
 class Subject:
-    def __init__(self, name, owner, template="", components=None, widgets=None, id=None, is_deletable=True):
+    def __init__(self, name, owner, template="", components=None, widgets=None, id=None, is_deletable=True, category=None):
         self.id = id or str(uuid.uuid4())
         self.name = name
         self.owner = owner
@@ -30,6 +31,7 @@ class Subject:
         self.components = components or []
         self.widgets = widgets or []
         self.is_deletable = is_deletable
+        self.category = category or "Uncategorized"  # Default to "Uncategorized"
 
     async def add_component(self, component_name, component_type, data=None, is_deletable=True):
         if component_type in PREDEFINED_COMPONENT_TYPES:
@@ -85,15 +87,22 @@ class Subject:
         return {
             "id": self.id,
             "name": self.name,
+            "template": self.template,
+            "category": self.category,  # Return category name
             "components": self.components,
             "widgets": self.widgets,
             "is_deletable": self.is_deletable,
             "owner": self.owner,
-            "template": self.template
         }
 
     async def apply_template(self, template):
+        """Apply a template to the subject and set its category."""
+        if template not in TEMPLATES:
+            raise ValueError(f"Template '{template}' does not exist.")
+        
         self.template = template
+        self.category = TEMPLATES[template]["category"]  # Set category from template
+
         for comp in TEMPLATES[template]["components"]:
             is_comp_deletable = comp.get("is_deletable", True)
             await self.add_component(comp["name"], comp["type"], comp["data"], is_deletable=is_comp_deletable)
@@ -106,7 +115,7 @@ class Subject:
                     widget["type"],
                     widget.get("data", {}),
                     reference_component,
-                    widget.get("is_deletable", True)
+                    widget.get("is_deletable", True),
                 )
 
     @staticmethod
@@ -115,7 +124,8 @@ class Subject:
                           owner=data["owner"],
                           template=data["template"],
                           id=data["id"],
-                          is_deletable=data.get("is_deletable", True))
+                          is_deletable=data.get("is_deletable", True),
+                          category=data.get("category", "Uncategorized")) 
         for comp_id in data["components"]:
             subject.components.append(comp_id)
         for widget_id in data.get("widgets", []):
@@ -131,7 +141,8 @@ class Subject:
             template=self.template,
             components=self.components,
             widgets=self.widgets,
-            is_deletable=self.is_deletable
+            is_deletable=self.is_deletable,
+            category=self.category,  # Save category name
         )
         subject_db.save()
 
@@ -148,7 +159,8 @@ class Subject:
                     components=[
                         component.id for component in subject_db.components],
                     widgets=[widget.id for widget in subject_db.widgets],
-                    is_deletable=subject_db.is_deletable
+                    is_deletable=subject_db.is_deletable,
+                    category=subject_db.category  
                 )
                 return subject
             else:

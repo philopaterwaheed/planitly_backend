@@ -24,7 +24,8 @@ async def create_default_subjects_for_user(user_id):
                 name=template_data["name"],
                 owner=user_id,
                 template=template_key,
-                is_deletable=template_data["is_deletable"]
+                is_deletable=template_data["is_deletable"],
+                category=template_data.get("category", "system")
             )
             subject.save_to_db()
 

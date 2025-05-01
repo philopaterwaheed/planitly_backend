@@ -10,14 +10,13 @@ from .rates import RateLimit
 from .tokens import RefreshToken
 from .notifications import Notification_db , Notification , NotificationCount
 from .fcmtoken import FCMToken_db, FCMManager
+from .category import Category_db
 from mongoengine import connect
-from dotenv import load_dotenv
-import os
+from consts import env_variables
 
 # TODO - compine the classes with the db classes
 
-load_env = load_dotenv()
-MONGO_HOST = os.getenv("MONGO_HOST", "localhost")
+MONGO_HOST = env_variables['MONGO_HOST']
 if MONGO_HOST == "localhost":
     connect(db="planitly", host="localhost", port=27017)
 else:

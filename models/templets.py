@@ -4,6 +4,7 @@ DEFAULT_USER_TEMPLATES = {
     "profile": {
         "name": "User Profile",
         "is_deletable": False,
+        "category": "system",
         "components": [
             {
                 "name": "Display Name",
@@ -28,6 +29,7 @@ DEFAULT_USER_TEMPLATES = {
     "settings": {
         "name": "User Settings",
         "is_deletable": False,
+        "category": "system",
         "components": [
             {
                 "name": "Theme",
@@ -52,6 +54,7 @@ DEFAULT_USER_TEMPLATES = {
     "habit_tracker": {
         "name": "Habit Tracker",
         "is_deletable": False,
+        "category": "system",
         "components": [
             {
                 "name": "habits",
@@ -64,6 +67,7 @@ DEFAULT_USER_TEMPLATES = {
     "financial_tracker": {
         "name": "Financial Tracker",
         "is_deletable": False,
+        "category": "system",
         "components": [
                 {
                     "name": "Income",
@@ -88,33 +92,28 @@ DEFAULT_USER_TEMPLATES = {
 }
 TEMPLATES = {
     "habit": {
+        "category": "Personal Development",  # Add category
         "components": [
-            {"name": "Description", "type": "str",
-             "data": {"item": "Description"}},
+            {"name": "Description", "type": "str", "data": {"item": "Description"}},
             {"name": "Frequency", "type": "str", "data": {"item": "Daily"}},
-            {"name": "Start Date", "type": "date",
-                "data": {"item": datetime.datetime.now()}},
-            {"name": "End Date", "type": "date", "data": {
-                "item": datetime.datetime.now()}}
-        ]
+            {"name": "Start Date", "type": "date", "data": {"item": datetime.datetime.now()}},
+            {"name": "End Date", "type": "date", "data": {"item": datetime.datetime.now()}},
+        ],
     },
     "person": {
+        "category": "Contacts",  # Add category
         "components": [
             {"name": "Full Name", "type": "str", "data": {"item": "John Doe"}},
-            {"name": "Birthday", "type": "date", "data": {
-                "item": datetime.datetime.now()}},
+            {"name": "Birthday", "type": "date", "data": {"item": datetime.datetime.now()}},
             {"name": "Phone", "type": "str", "data": {"item": "1234567890"}},
-            {"name": "Email", "type": "str", "data": {"item": ""}},
-            {"name": "Address", "type": "str", "data": {"item": ""}}
-        ]
+        ],
     },
-    "task": {
+    "financial_tracker": {
+        "category": "Finance",  # Add category
         "components": [
-            {"name": "Title", "type": "str", "data":  {"item": "Task Title"}},
-            {"name": "Description", "type": "str",
-             "data": {"item": "Task Details"}},
-            {"name": "Due Date", "type": "date", "data": {
-                "item": datetime.datetime.now()}},
-        ]
-    }
+            {"name": "Income", "type": "Array_type", "data": {"items": [], "type": "int"}},
+            {"name": "Expenses", "type": "Array_type", "data": {"items": [], "type": "int"}},
+            {"name": "Savings Goal", "type": "int", "data": {"item": 0}},
+        ],
+    },
 }

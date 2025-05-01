@@ -5,7 +5,7 @@ import os
 load_dotenv()
 
 env_variables = {
-    'MONGO_HOST': os.getenv('MONGO_HOST', "server"),
+    'MONGO_HOST': os.getenv('MONGO_HOST', "localhost"),
     'JWT_SECRET': os.getenv('JWT_SECRET_KEY', "secret"),
     'REJWT_SECRET': os.getenv('REJWT_SECRET_KEY', "secret"),
     'APIKEY': os.getenv('APIKEY'),
