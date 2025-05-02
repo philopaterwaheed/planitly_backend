@@ -50,18 +50,20 @@ class Subject:
             print(f"Component type '{component_type}' is not defined.")
         return component
 
-    async def add_widget(self, widget_type, data=None, reference_component=None, is_deletable=True):
+    async def add_widget(self, widget_name, widget_type, data=None, reference_component=None, is_deletable=True):
         try:
             # Validate widget type and data
             validated_data = Widget.validate_widget_type(
                 widget_type, reference_component, data)
 
             widget = Widget(
+                widget_name=widget_name,
                 type=widget_type,
                 host_subject=self.id,
                 data=validated_data,
                 reference_component=reference_component,
-                owner=self.owner
+                owner=self.owner,
+                is_deletable=is_deletable
             )
 
             widget.save_to_db()
@@ -112,6 +114,7 @@ class Subject:
             for widget in TEMPLATES[template]["widgets"]:
                 reference_component = widget.get("reference_component", None)
                 await self.add_widget(
+                    widget["name"],
                     widget["type"],
                     widget.get("data", {}),
                     reference_component,

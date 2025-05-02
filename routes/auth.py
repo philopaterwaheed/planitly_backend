@@ -59,6 +59,7 @@ async def create_default_subjects_for_user(user_id):
 
                     # Add the widget to the subject
                     await subject.add_widget(
+                        widget_name=widget_data["name"],
                         widget_type=widget_data["type"],
                         data=widget_data.get("data", {}),
                         reference_component=reference_component,

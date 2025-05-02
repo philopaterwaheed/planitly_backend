@@ -8,6 +8,7 @@ from .component import Component_db
 
 class Widget_db(Document):
     id = StringField(primary_key=True)
+    name = StringField(required=True)  
     type = StringField(required=True)
     host_subject = ReferenceField(
         "Subject_db", required=True)
@@ -15,48 +16,57 @@ class Widget_db(Document):
     reference_component = ReferenceField(
         Component_db, reverse_delete_rule=NULLIFY)
     owner = StringField(required=True)
+    is_deletable = StringField(default="true")
     meta = {'collection': 'widgets'}
 
 
 class Widget:
-    def __init__(self, id=None, type=None, host_subject=None, data=None, reference_component=None, owner=None):
+    def __init__(self, id=None, name=None, type=None, host_subject=None, data=None, reference_component=None, owner=None, is_deletable=True):
         self.id = id or str(uuid.uuid4())
+        self.name = name  # New field
         self.type = type
         self.host_subject = host_subject
         self.data = data
         self.reference_component = reference_component
         self.owner = owner
+        self.is_deletable = is_deletable
 
     def to_json(self):
         return {
             "id": self.id,
+            "name": self.name,  # Include name in JSON
             "type": self.type,
             "host_subject": self.host_subject,
             "data": self.data,
             "reference_component": self.reference_component,
             "owner": self.owner,
+            "is_deletable": self.is_deletable,
         }
 
     @staticmethod
     def from_json(data):
         widget = Widget(
             id=data["id"],
+            name=data["name"],  # Parse name from JSON
             type=data["type"],
             host_subject=data["host_subject"],
             data=data.get("data"),
             reference_component=data.get("reference_component"),
-            owner=data.get("owner")
+            owner=data.get("owner"),
+            is_deletable=data.get("is_deletable", True)
         )
         return widget
 
     def save_to_db(self):
         widget_db = Widget_db(
             id=self.id,
+            name=self.name,  # Save name to database
             type=self.type,
             host_subject=self.host_subject,
             data=self.data,
             reference_component=self.reference_component,
-            owner=self.owner
+            owner=self.owner,
+            is_deletable=self.is_deletable
         )
         widget_db.save()
         return widget_db
@@ -68,11 +78,13 @@ class Widget:
             if widget_db:
                 widget = Widget(
                     id=widget_db.id,
+                    name=widget_db.name,  # Load name from database
                     type=widget_db.type,
                     host_subject=widget_db.host_subject.id if widget_db.host_subject else None,
                     data=widget_db.data,
                     reference_component=widget_db.reference_component.id if widget_db.reference_component else None,
-                    owner=widget_db.owner
+                    owner=widget_db.owner,
+                    is_deletable=widget_db.is_deletable
                 )
                 return widget
             else:

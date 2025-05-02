@@ -19,14 +19,15 @@ async def create_widget(data: dict, user_device: tuple = Depends(verify_device))
     current_device = user_device[1]
     try:
         data_id = data.get('id', str(uuid.uuid4()))
+        widget_name = data.get('name')  # Get the name from the request
         widget_type = data.get('type')
         host_subject_id = data.get('host_subject')
         reference_component_id = data.get('reference_component')
         data_value = data.get('data', {})
 
-        if not widget_type or not host_subject_id:
+        if not widget_type or not host_subject_id or not widget_name:
             raise HTTPException(
-                status_code=400, detail="Type and Host Subject are required"
+                status_code=400, detail="Name, Type, and Host Subject are required"
             )
 
         host_subject = Subject_db.objects(id=host_subject_id).first()
@@ -46,19 +47,6 @@ async def create_widget(data: dict, user_device: tuple = Depends(verify_device))
                 raise HTTPException(
                     status_code=404, detail="Reference Component not found")
 
-            # Component specific type validation
-            if widget_type == "component_reference":
-                # You can add specific validations based on the component type
-                component_type = reference_component.type
-                # Example: Allow only certain component types
-                allowed_types = ["data_source", "api_endpoint", "database"]
-                if component_type not in allowed_types:
-                    raise HTTPException(
-                        status_code=400,
-                        detail=f"Component type '{
-                            component_type}' not supported for this widget"
-                    )
-
         # Validate widget type and data structure
         try:
             validated_data = Widget.validate_widget_type(
@@ -72,6 +60,7 @@ async def create_widget(data: dict, user_device: tuple = Depends(verify_device))
 
         widget = Widget(
             id=data_id,
+            name=widget_name,
             type=widget_type,
             host_subject=host_subject_id,
             reference_component=reference_component_id,
@@ -128,13 +117,18 @@ async def get_all_widgets(
 
 
 @router.delete("/{widget_id}", dependencies=[Depends(verify_device)], status_code=status.HTTP_200_OK)
-async def delete_widget(widget_id: str, user_device: tuple =Depends(verify_device)):
-    current_user = current_user[0]
+async def delete_widget(widget_id: str, user_device: tuple = Depends(verify_device)):
+    current_user = user_device[0]
     try:
         widget = Widget_db.objects.get(id=widget_id)
         if widget.owner != current_user.id and not current_user.admin:
             raise HTTPException(
                 status_code=403, detail="Not authorized to delete this widget")
+
+        # Check if the widget is deletable
+        if widget.is_deletable == "false":
+            raise HTTPException(
+                status_code=400, detail="This widget cannot be deleted")
 
         # If it's a daily_todo widget, also delete associated todos
         if widget.type == "daily_todo":
@@ -790,9 +784,18 @@ async def create_photo_widget(
     current_user = user_device[0]
     try:
         host_subject_id = data.get("host_subject")
+        widget_name = data.get("name")
         if not host_subject_id:
             raise HTTPException(status_code=400, detail="Host subject is required")
-
+        if not widget_name:
+            raise HTTPException(status_code=400, detail="Widget name is required")
+        if not file:
+            raise HTTPException(status_code=400, detail="File is required")
+        if not file.filename.endswith(('.jpg', '.jpeg', '.png')):
+            raise HTTPException(status_code=400, detail="Invalid file type. Only JPG and PNG are allowed")
+        if file.size > 5 * 1024 * 1024:  # 5 MB limit
+            raise HTTPException(status_code=400, detail="File size exceeds 5 MB limit")
+ 
         # Validate host subject
         host_subject = Subject_db.objects(id=host_subject_id).first()
         if not host_subject:
@@ -810,6 +813,7 @@ async def create_photo_widget(
 
         # Create the widget
         widget = Widget_db(
+            name=widget_name,
             type="photo_widget",
             host_subject=host_subject,
             data={"photo_url": photo_url},
