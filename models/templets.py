@@ -24,6 +24,9 @@ DEFAULT_USER_TEMPLATES = {
                 "data": {"item": ""},
                 "is_deletable": False
             }
+        ],
+        "widgets": [
+            {"name": "Profile Summary", "type": "text_field", "data": {"content": "Welcome to your profile!", "editable": False}},
         ]
     },
     "settings": {
@@ -49,6 +52,9 @@ DEFAULT_USER_TEMPLATES = {
                 "data": {"item": "standard"},
                 "is_deletable": False
             }
+        ],
+        "widgets": [
+            {"name": "Settings Overview", "type": "note", "data": {"content": "Adjust your settings here.", "tags": [], "pinned": False}},
         ]
     },
     "habit_tracker": {
@@ -62,6 +68,10 @@ DEFAULT_USER_TEMPLATES = {
                 "data": {"items": [], "type": "str"},
                 "is_deletable": False
             }
+        ],
+        "widgets": [
+            {"name": "Habit Progress", "type": "graph", "data": {"type": "line", "data_points": []}},
+            {"name": "Daily Habits", "type": "daily_todo", "data": {"selected_date": datetime.datetime.now().strftime("%Y-%m-%d")}},
         ]
     },
     "financial_tracker": {
@@ -69,24 +79,28 @@ DEFAULT_USER_TEMPLATES = {
         "is_deletable": False,
         "category": "system",
         "components": [
-                {
-                    "name": "Income",
-                    "type": "Array_type",
-                    "data": {"items": [], "type": "int"},
-                    "is_deletable": False
-                },
             {
-                    "name": "Expenses",
-                    "type": "Array_type",
-                    "data": {"items": [], "type": "int"},
-                    "is_deletable": False
+                "name": "Income",
+                "type": "Array_type",
+                "data": {"items": [], "type": "int"},
+                "is_deletable": False
             },
             {
-                    "name": "Savings Goal",
-                    "type": "int",
-                    "data": {"item": ""},
-                    "is_deletable": False
+                "name": "Expenses",
+                "type": "Array_type",
+                "data": {"items": [], "type": "int"},
+                "is_deletable": False
+            },
+            {
+                "name": "Savings Goal",
+                "type": "int",
+                "data": {"item": ""},
+                "is_deletable": False
             }
+        ],
+        "widgets": [
+            {"name": "Expense Tracker", "type": "table", "data": {"columns": ["Date", "Category", "Amount"], "rows": []}},
+            {"name": "Savings Progress", "type": "graph", "data": {"type": "bar", "data_points": []}},
         ]
     }
 }
@@ -99,6 +113,10 @@ TEMPLATES = {
             {"name": "Start Date", "type": "date", "data": {"item": datetime.datetime.now()}},
             {"name": "End Date", "type": "date", "data": {"item": datetime.datetime.now()}},
         ],
+        "widgets": [
+            {"name": "Habit Progress", "type": "graph", "data": {"type": "line", "data_points": []}},
+            {"name": "Daily Checklist", "type": "daily_todo", "data": {"selected_date": datetime.datetime.now().strftime("%Y-%m-%d")}},
+        ],
     },
     "person": {
         "category": "Contacts",  # Add category
@@ -107,6 +125,10 @@ TEMPLATES = {
             {"name": "Birthday", "type": "date", "data": {"item": datetime.datetime.now()}},
             {"name": "Phone", "type": "str", "data": {"item": "1234567890"}},
         ],
+        "widgets": [
+            {"name": "Contact Notes", "type": "note", "data": {"content": "", "tags": [], "pinned": False}},
+            {"name": "Birthday Reminder", "type": "calendar", "data": {"events": [{"title": "Birthday", "date": datetime.datetime.now().strftime("%Y-%m-%d")}]}},
+        ],
     },
     "financial_tracker": {
         "category": "Finance",  # Add category
@@ -114,6 +136,10 @@ TEMPLATES = {
             {"name": "Income", "type": "Array_type", "data": {"items": [], "type": "int"}},
             {"name": "Expenses", "type": "Array_type", "data": {"items": [], "type": "int"}},
             {"name": "Savings Goal", "type": "int", "data": {"item": 0}},
+        ],
+        "widgets": [
+            {"name": "Expense Tracker", "type": "table", "data": {"columns": ["Date", "Category", "Amount"], "rows": []}},
+            {"name": "Savings Progress", "type": "graph", "data": {"type": "bar", "data_points": []}},
         ],
     },
 }

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from models import Subject_db
 from middleWares import verify_device, admin_required
-from models import User, Component, Component_db, Subject, Subject_db,Category_db
+from models import User, Widget_db, Component_db, Subject, Subject_db,Category_db
 from mongoengine.queryset.visitor import Q
 from mongoengine.errors import DoesNotExist, ValidationError
 
@@ -190,10 +190,50 @@ async def delete_subject(subject_id: str, user_device: tuple =Depends(verify_dev
         else:
             raise HTTPException(
                 status_code=403, detail="Not authorized to delete this subject")
-        raise HTTPException(
-            status_code=403, detail="Not authorized to delete this subject")
     except DoesNotExist:
         raise HTTPException(status_code=404, detail="Subject not found")
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"An unexpected error occurred: {str(e)}")
+
+
+@router.get("/{subject_id}/full-data", status_code=status.HTTP_200_OK, dependencies=[Depends(verify_device)])
+async def get_subject_full_data(subject_id: str, user_device: tuple = Depends(verify_device)):
+    """Retrieve all data inside a subject, including its components and widgets."""
+    current_user = user_device[0]
+    try:
+        # Fetch the subject
+        subject = Subject_db.objects.get(id=subject_id)
+        if not subject:
+            raise HTTPException(status_code=404, detail="Subject not found")
+
+        # Check if the user is authorized to access the subject
+        if str(current_user.id) != str(subject.owner) and not current_user.admin:
+            raise HTTPException(
+                status_code=403, detail="Not authorized to access this subject"
+            )
+
+        # Fetch components and widgets
+        components = [
+            component.to_mongo().to_dict()
+            for component in Component_db.objects(host_subject=subject.id)
+        ]
+        widgets = [
+            widget.to_mongo().to_dict()
+            for widget in Widget_db.objects(host_subject=subject.id)
+        ]
+
+        # Combine subject, components, and widgets data
+        full_data = {
+            "subject": subject.to_mongo().to_dict(),
+            "components": components,
+            "widgets": widgets,
+        }
+
+        return full_data
+    except DoesNotExist:
+        raise HTTPException(status_code=404, detail="Subject not found")
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"An unexpected error occurred: {str(e)}"
+        )

@@ -95,11 +95,11 @@ class Widget:
             return None
 
     @staticmethod
-    def validate_widget_type(widget_type, reference_component=None, data=None):
+    def validate_widget_type(widget_type, reference_component : Component_db=None, data=None):
         """Validates widget type and ensures correct data structure based on type"""
         # todo : add more types
-        valid_self_hosted_types = ["daily_todo", "table", "text_field"]
-        valid_component_ref_types = ["check_box", "chart", "text_field"]
+        valid_self_hosted_types = ["daily_todo", "table", "text_field", "calendar", "note", "graph"]
+        valid_component_ref_types = ["check_box", "chart", "text_field", "image"]
 
         if widget_type in valid_self_hosted_types:
             if widget_type == "daily_todo":
@@ -133,26 +133,102 @@ class Widget:
                 if "editable" not in data:
                     data["editable"] = True
 
+            elif widget_type == "calendar":
+                # Validate calendar structure
+                if not data or not isinstance(data, dict):
+                    data = {}
+                if "events" not in data:
+                    data["events"] = []  # List of events
+                if "view" not in data:
+                    data["view"] = "month"  # Options: day, week, month
+
+            elif widget_type == "note":
+                # Validate note structure
+                if not data or not isinstance(data, dict):
+                    data = {}
+                if "content" not in data:
+                    data["content"] = ""
+                if "tags" not in data:
+                    data["tags"] = []  # List of tags
+                if "pinned" not in data:
+                    data["pinned"] = False  # Default to not pinned
+
+            elif widget_type == "graph":
+                # Validate graph structure
+                if not data or not isinstance(data, dict):
+                    data = {}
+                if "x_axis" not in data:
+                    data["x_axis"] = []  # Default to an empty list for x-axis
+                if "y_axis" not in data:
+                    data["y_axis"] = []  # Default to an empty list for y-axis
+                if not all(isinstance(i, int) for i in data["x_axis"]):
+                    raise ValidationError("x_axis must be an array of integers")
+                if not all(isinstance(i, int) for i in data["y_axis"]):
+                    raise ValidationError("y_axis must be an array of integers")
+                if "title" not in data:
+                    data["title"] = ""  # Optional title for the graph
+
             return data
 
         elif widget_type in valid_component_ref_types:
-            if not reference_component:
-                raise ValidationError(
-                    f"Widget type {widget_type} requires a reference component")
-
-            # For text_field as component reference, ensure basic structure
-            if widget_type == "text_field":
-                if not data or not isinstance(data, dict):
-                    data = {}
-                # These are widget-specific settings, separate from component data
-                if "format" not in data:
-                    data["format"] = "plain"
-                if "editable" not in data:
-                    # Default to false for component references
-                    data["editable"] = False
-
-            # Component type validation will happen in the router
-            return data
+            return Widget.validate_component_referenced_type(widget_type, reference_component, data)
 
         else:
             raise ValidationError(f"Invalid widget type: {widget_type}")
+
+    @staticmethod
+    def validate_component_referenced_type(widget_type, reference_component, data=None):
+        """Validates widgets that reference a component."""
+        if not reference_component:
+            raise ValidationError(
+                f"Widget type {widget_type} requires a reference component"
+            )
+
+        if not data or not isinstance(data, dict):
+            data = {}
+
+        if widget_type == "text_field":
+            # Validate text_field as a component reference
+            if "format" not in data:
+                data["format"] = "plain"  # Default format
+            if "editable" not in data:
+                data["editable"] = False  # Default to non-editable for references
+
+        elif widget_type == "image":
+            # Validate image widget structure
+            if "url" not in data:
+                raise ValidationError("Image widget requires a URL")
+            if "alt_text" not in data:
+                data["alt_text"] = ""  # Optional alt text for accessibility
+
+        elif widget_type == "chart":
+            # Validate chart widget structure
+            if "chart_type" not in data:
+                data["chart_type"] = "bar"  # Default chart type
+            if "data_points" not in data:
+                data["data_points"] = []  # Default to an empty list of data points
+
+        elif widget_type == "check_box":
+            # Validate check_box widget structure
+            if "checked" not in data:
+                data["checked"] = False  # Default to unchecked
+
+        elif widget_type == "graph":
+            # Validate graph widget referencing a numerical array component
+            if reference_component.comp_type != "Array_type":
+                raise ValidationError("Graph widget must reference a component of type Array_type")
+            if reference_component.data.get("type") not in ["int", "float"]:
+                raise ValidationError("Graph widget can only reference an Array_type of numerical type (int or float)")
+
+            # Set default graph data structure
+            if "x_axis" not in data:
+                data["x_axis"] = []  # Default to an empty list for x-axis
+            if "y_axis" not in data:
+                data["y_axis"] = []  # Default to an empty list for y-axis
+            if "title" not in data:
+                data["title"] = ""  # Optional title for the graph
+
+        else:
+            raise ValidationError(f"Unsupported component-referenced widget type: {widget_type}")
+
+        return data

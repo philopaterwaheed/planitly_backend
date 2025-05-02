@@ -47,11 +47,14 @@ async def create_widget(data: dict, user_device: tuple = Depends(verify_device))
                 raise HTTPException(
                     status_code=404, detail="Reference Component not found")
 
+        if not reference_component and widget_type == "component_reference":
+            raise HTTPException(
+                status_code=400, detail="Reference Component is required for component_reference widget type")
         # Validate widget type and data structure
         try:
             validated_data = Widget.validate_widget_type(
                 widget_type,
-                reference_component_id,
+                reference_component,
                 data_value
             )
             data_value = validated_data  # Update with validated data
