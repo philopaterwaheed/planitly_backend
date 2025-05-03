@@ -16,67 +16,45 @@ router = APIRouter(prefix="/widgets", tags=["Widget"])
 @router.post("/", dependencies=[Depends(verify_device)], status_code=status.HTTP_201_CREATED)
 async def create_widget(data: dict, user_device: tuple = Depends(verify_device)):
     current_user = user_device[0]
-    current_device = user_device[1]
     try:
-        data_id = data.get('id', str(uuid.uuid4()))
-        widget_name = data.get('name')  # Get the name from the request
-        widget_type = data.get('type')
-        host_subject_id = data.get('host_subject')
-        reference_component_id = data.get('reference_component')
-        data_value = data.get('data', {})
+        widget_name = data.get("name")
+        widget_type = data.get("type")
+        host_subject_id = data.get("host_subject")
+        reference_component_id = data.get("reference_component")
+        widget_data = data.get("data", {})
 
-        if not widget_type or not host_subject_id or not widget_name:
+        if not widget_name or not widget_type or not host_subject_id:
             raise HTTPException(
-                status_code=400, detail="Name, Type, and Host Subject are required"
+                status_code=400, detail="Name, Type, and Host Subject are required."
             )
 
-        host_subject = Subject_db.objects(id=host_subject_id).first()
-        if not host_subject:
-            raise HTTPException(
-                status_code=404, detail="Host Subject not found")
-
-        if current_user.id != host_subject.owner and not current_user.admin:
-            raise HTTPException(
-                status_code=403, detail="Not authorized to create widget for this subject")
-
+        # Validate the widget type and data
         reference_component = None
         if reference_component_id:
-            reference_component = Component_db.objects(
-                id=reference_component_id).first()
-            if not reference_component:
-                raise HTTPException(
-                    status_code=404, detail="Reference Component not found")
+            reference_component = Component_db.objects.get(id=reference_component_id)
 
-        if not reference_component and widget_type == "component_reference":
-            raise HTTPException(
-                status_code=400, detail="Reference Component is required for component_reference widget type")
-        # Validate widget type and data structure
         try:
             validated_data = Widget.validate_widget_type(
-                widget_type,
-                reference_component,
-                data_value
+                widget_type=widget_type,
+                reference_component=reference_component,
+                data=widget_data
             )
-            data_value = validated_data  # Update with validated data
+            widget_data = validated_data  # Use the validated data
         except ValidationError as e:
             raise HTTPException(status_code=400, detail=str(e))
 
+        # Save the widget
         widget = Widget(
-            id=data_id,
             name=widget_name,
             type=widget_type,
             host_subject=host_subject_id,
-            reference_component=reference_component_id,
-            data=data_value,
+            reference_component=reference_component,
+            data=widget_data,
             owner=current_user.id
         )
         widget.save_to_db()
 
-        return {"message": "Widget created successfully", "id": str(widget.id)}
-    except ValidationError as e:
-        raise HTTPException(
-            status_code=400, detail=f"Validation error: {str(e)}"
-        )
+        return {"message": "Widget created successfully", "id": widget.id}
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"An unexpected error occurred: {str(e)}"

@@ -5,13 +5,14 @@ from pytz import UTC  # type: ignore
 from datetime import datetime
 
 ACCEPTED_OPERATIONS = {
-
     "int": ["replace", "add", "multiply"],
     "str": ["replace"],
     "date": ["replace"],
     "bool": ["replace", "toggle"],
     "Array_type": ["replace", "append", "remove_back", "remove_front", "delete_at", "push_at"],
     "Array_generic": ["replace", "append", "remove_back", "remove_front", "delete_at", "push_at"],
+    "pair": ["replace", "update_key", "update_value"],  # New operations for pair
+    "Array_of_pairs": ["replace", "append", "remove_back", "remove_front", "delete_at", "push_at", "update_pair"],  # New operations for Array_of_pairs
 }
 
 
@@ -126,6 +127,41 @@ class DataTransfer:
                     if isinstance(index, int) and 0 <= index <= len(target_data):
                         target_data.insert(
                             index, {"item": source_value["item"], "id": str(uuid.uuid4())})
+                elif self.operation == "replace" and target_component.comp_type == "pair":
+                    target_data["key"] = source_value.get("key", target_data["key"])
+                    target_data["value"] = source_value.get("value", target_data["value"])
+                elif self.operation == "update_key" and target_component.comp_type == "pair":
+                    if "key" in source_value:
+                        target_data["key"] = source_value["key"]
+                elif self.operation == "update_value" and target_component.comp_type == "pair":
+                    if "value" in source_value:
+                        target_data["value"] = source_value["value"]
+                elif self.operation == "append" and target_component.comp_type == "Array_of_pairs":
+                    if isinstance(source_value, dict) and "key" in source_value and "value" in source_value:
+                        target_data.append(source_value)
+                elif self.operation == "remove_back" and target_component.comp_type == "Array_of_pairs":
+                    if len(target_data) > 0:
+                        removed = target_data.pop()
+                        self.details["removed"] = removed
+                elif self.operation == "remove_front" and target_component.comp_type == "Array_of_pairs":
+                    if len(target_data) > 0:
+                        removed = target_data.pop(0)
+                        self.details["removed"] = removed
+                elif self.operation == "delete_at" and target_component.comp_type == "Array_of_pairs":
+                    index = self.data_value.get("index")
+                    if isinstance(index, int) and 0 <= index < len(target_data):
+                        removed = target_data.pop(index)
+                        self.details["removed"] = removed
+                elif self.operation == "push_at" and target_component.comp_type == "Array_of_pairs":
+                    index = self.data_value.get("index")
+                    pair = self.data_value.get("pair")
+                    if isinstance(index, int) and 0 <= index <= len(target_data) and isinstance(pair, dict) and "key" in pair and "value" in pair:
+                        target_data.insert(index, pair)
+                elif self.operation == "update_pair" and target_component.comp_type == "Array_of_pairs":
+                    index = self.data_value.get("index")
+                    pair = self.data_value.get("pair")
+                    if isinstance(index, int) and 0 <= index < len(target_data) and isinstance(pair, dict):
+                        target_data[index].update(pair)
                 else:
                     return False
                 if not (target_component.comp_type.startswith("Array") and isinstance(target_data, list)) or (target_component.comp_type not in ["Array_type", "Array_generic"]):

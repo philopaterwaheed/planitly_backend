@@ -10,6 +10,8 @@ PREDEFINED_COMPONENT_TYPES = {
     "date": {"item": datetime.datetime.now().isoformat()},
     "Array_type": {"items": [], "type": ""},
     "Array_generic": {"items": []},
+    "pair": {"key": "", "value": ""},  # New pair type
+    "Array_of_pairs": {"items": [], "type": "pair"},  # New array of pairs type
 }
 
 
@@ -79,12 +81,19 @@ class Component:
         component_db.save()
 
     def alter_data(self, value):
-        if not (self.comp_type.startswith("Array") and isinstance(value, list)) or (self.comp_type not in ["Array_type", "Array_generic"]):
-            print(value)
-            self.data["item"] = value
+        if self.comp_type == "pair":
+            if isinstance(value, dict) and "key" in value and "value" in value:
+                self.data.update(value)
+        elif self.comp_type == "Array_of_pairs":
+            if isinstance(value, list) and all(isinstance(item, dict) and "key" in item and "value" in item for item in value):
+                self.data["items"] = value
         else:
-            print(value)
-            self.data["items"] = value
+            if not (self.comp_type.startswith("Array") and isinstance(value, list)) or (self.comp_type not in ["Array_type", "Array_generic"]):
+                print(value)
+                self.data["item"] = value
+            else:
+                print(value)
+                self.data["items"] = value
         self.save_to_db()
 
     @staticmethod

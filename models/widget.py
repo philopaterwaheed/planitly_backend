@@ -98,8 +98,8 @@ class Widget:
     def validate_widget_type(widget_type, reference_component : Component_db=None, data=None):
         """Validates widget type and ensures correct data structure based on type"""
         # todo : add more types
-        valid_self_hosted_types = ["daily_todo", "table", "text_field", "calendar", "note", "graph"]
-        valid_component_ref_types = ["check_box", "chart", "text_field", "image"]
+        valid_self_hosted_types = ["daily_todo", "table", "text_field", "calendar", "note", ]
+        valid_component_ref_types = ["check_box", "chart", "text_field", "image","graph"]
 
         if widget_type in valid_self_hosted_types:
             if widget_type == "daily_todo":
@@ -214,19 +214,27 @@ class Widget:
                 data["checked"] = False  # Default to unchecked
 
         elif widget_type == "graph":
-            # Validate graph widget referencing a numerical array component
-            if reference_component.comp_type != "Array_type":
-                raise ValidationError("Graph widget must reference a component of type Array_type")
-            if reference_component.data.get("type") not in ["int", "float"]:
-                raise ValidationError("Graph widget can only reference an Array_type of numerical type (int or float)")
+            # Validate graph widget referencing an Array_of_pairs component
+            if reference_component.comp_type != "Array_of_pairs":
+                raise ValidationError("Graph widget must reference a component of type Array_of_pairs")
+
+            # Ensure the component's data type is valid
+            if reference_component.data.get("type") != "pair":
+                raise ValidationError("Graph widget can only reference an Array_of_pairs component with type 'pair'")
 
             # Set default graph data structure
-            if "x_axis" not in data:
-                data["x_axis"] = []  # Default to an empty list for x-axis
-            if "y_axis" not in data:
-                data["y_axis"] = []  # Default to an empty list for y-axis
+            if "x_axis_key" not in data:
+                data["x_axis_key"] = ""  # Key to use for x-axis values
+            if "y_axis_key" not in data:
+                data["y_axis_key"] = ""  # Key to use for y-axis values
             if "title" not in data:
                 data["title"] = ""  # Optional title for the graph
+
+            # Validate that x_axis_key and y_axis_key are provided
+            if not data["x_axis_key"]:
+                raise ValidationError("Graph widget requires an x_axis_key to map x-axis values")
+            if not data["y_axis_key"]:
+                raise ValidationError("Graph widget requires a y_axis_key to map y-axis values")
 
         else:
             raise ValidationError(f"Unsupported component-referenced widget type: {widget_type}")
