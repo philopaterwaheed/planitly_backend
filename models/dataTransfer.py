@@ -162,6 +162,24 @@ class DataTransfer:
                     pair = self.data_value.get("pair")
                     if isinstance(index, int) and 0 <= index < len(target_data) and isinstance(pair, dict):
                         target_data[index].update(pair)
+                elif target_component.comp_type in ["Array_type", "Array_generic"]:
+                    target_items = ArrayItem_db.objects(component=target_component.id)
+                    if self.operation == "append":
+                        ArrayItem_db(component=target_component.id, value=str(source_value)).save()
+                    elif self.operation == "remove_back" and target_items:
+                        target_items.order_by('-id').first().delete()
+                    elif self.operation == "remove_front" and target_items:
+                        target_items.order_by('id').first().delete()
+                    elif self.operation == "delete_at":
+                        index = self.data_value.get("index")
+                        if isinstance(index, int) and 0 <= index < len(target_items):
+                            target_items[index].delete()
+                    elif self.operation == "push_at":
+                        index = self.data_value.get("index")
+                        value = self.data_value.get("value")
+                        if isinstance(index, int) and value:
+                            ArrayItem_db(component=target_component.id, value=str(value)).save()
+                    return True
                 else:
                     return False
                 if not (target_component.comp_type.startswith("Array") and isinstance(target_data, list)) or (target_component.comp_type not in ["Array_type", "Array_generic"]):

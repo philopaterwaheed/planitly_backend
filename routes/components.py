@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from models import Subject_db
 from middleWares import verify_device, admin_required
-from models import User, Component, Component_db, Subject, Subject_db, DataTransfer, DataTransfer_db
+from models import User, Component, Component_db, Subject, Subject_db, DataTransfer, DataTransfer_db, ArrayItem_db
 from mongoengine.errors import DoesNotExist
 
 router = APIRouter(prefix="/components", tags=["Components"])
@@ -33,6 +33,9 @@ async def create_component(data: dict, user_device: tuple = Depends(verify_devic
 
         component = Component(**data, owner=current_user.id)
         component.save_to_db()
+        if component.comp_type in ["Array_type", "Array_generic"] and "data" in data:
+            for item in data["data"].get("items", []):
+                ArrayItem_db(component=component.id, value=str(item)).save()
         host_subject.components.append(component.id)
         host_subject.save_to_db()
         return component.to_json()
@@ -44,8 +47,12 @@ async def create_component(data: dict, user_device: tuple = Depends(verify_devic
 async def get_component_by_id(component_id: str):
     """Retrieve a component by its ID."""
     try:
-        component = Component_db.objects.get(id=component_id)
-        return component.to_mongo()
+        component = Component.load_from_db(component_id)
+        if component.comp_type in ["Array_type", "Array_generic"]:
+            component_data = component.to_json()
+            component_data["items"] = component.get_array_items()
+            return component_data
+        return component.to_json()
     except DoesNotExist:
         raise HTTPException(status_code=404, detail="Component not found")
 

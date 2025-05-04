@@ -1,6 +1,7 @@
 from mongoengine import Document, StringField, DictField, ReferenceField, ListField, NULLIFY, BooleanField
 import uuid
 import datetime
+from .arrayItem import ArrayItem_db
 
 # Predefined data and widget types
 PREDEFINED_COMPONENT_TYPES = {
@@ -81,20 +82,24 @@ class Component:
         component_db.save()
 
     def alter_data(self, value):
-        if self.comp_type == "pair":
+        if self.comp_type in ["Array_type", "Array_generic"]:
+            # Clear existing array items
+            ArrayItem_db.objects(component=self.id).delete()
+            # Add new array items
+            if isinstance(value, list):
+                for item in value:
+                    ArrayItem_db(component=self.id, value=str(item)).save()
+        elif self.comp_type == "pair":
             if isinstance(value, dict) and "key" in value and "value" in value:
                 self.data.update(value)
-        elif self.comp_type == "Array_of_pairs":
-            if isinstance(value, list) and all(isinstance(item, dict) and "key" in item and "value" in item for item in value):
-                self.data["items"] = value
         else:
-            if not (self.comp_type.startswith("Array") and isinstance(value, list)) or (self.comp_type not in ["Array_type", "Array_generic"]):
-                print(value)
-                self.data["item"] = value
-            else:
-                print(value)
-                self.data["items"] = value
+            self.data["item"] = value
         self.save_to_db()
+
+    def get_array_items(self):
+        if self.comp_type in ["Array_type", "Array_generic"]:
+            return [item.value for item in ArrayItem_db.objects(component=self.id)]
+        return None
 
     @staticmethod
     def load_from_db(comp_id):
