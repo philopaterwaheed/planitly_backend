@@ -19,7 +19,7 @@ router = APIRouter(prefix="/auth", tags=["Auth"])
 async def create_default_subjects_for_user(user_id):
     """Create default non-deletable subjects for a new user and return their IDs."""
     try:
-        subject_ids = []
+        subject_ids = {}
         for template_key, template_data in DEFAULT_USER_TEMPLATES.items():
             # Create a new subject with the template
             subject = Subject(
@@ -33,7 +33,7 @@ async def create_default_subjects_for_user(user_id):
             if not subject.id:
                 raise Exception(f"Failed to save subject: {template_data['name']}")
 
-            subject_ids.append({"name":subject.name,"id":subject.id})
+            subject_ids[template_key] = subject.id
 
             # Add the components from the template
             for comp_data in template_data["components"]:
