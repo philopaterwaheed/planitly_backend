@@ -70,7 +70,6 @@ DEFAULT_USER_TEMPLATES = {
             }
         ],
         "widgets": [
-            {"name": "Habit Progress", "type": "graph", "data": {"type": "line", "data_points": []}},
             {"name": "Daily Habits", "type": "daily_todo", "data": {"selected_date": datetime.datetime.now().strftime("%Y-%m-%d")}},
         ]
     },
@@ -81,26 +80,40 @@ DEFAULT_USER_TEMPLATES = {
         "components": [
             {
                 "name": "Income",
-                "type": "Array_type",
-                "data": {"items": [], "type": "int"},
+                "type": "Array_of_pairs",
+                "data": {
+                    "items": [
+                        {"name": "salary", "amount": 6}
+                    ],
+                },
                 "is_deletable": False
             },
             {
                 "name": "Expenses",
-                "type": "Array_type",
-                "data": {"items": [], "type": "int"},
+                "type": "Array_of_pairs",
+                "data": {
+                    "items": [
+                        {"name":"food", "amount": 99}
+                    ],
+                },
                 "is_deletable": False
             },
             {
                 "name": "Savings Goal",
                 "type": "int",
-                "data": {"item": ""},
+                "data": {"item": 0},
                 "is_deletable": False
             }
         ],
         "widgets": [
-            {"name": "Expense Tracker", "type": "table", "data": {"columns": ["Date", "Category", "Amount"], "rows": []}},
-            {"name": "Savings Progress", "type": "graph", "data": {"type": "bar", "data_points": []}},
+            {
+                "name": "Expense Tracker",
+                "type": "table",
+                "data": {
+                    "columns": ["Date", "Category", "Amount"],
+                    "rows": []
+                }
+            },
         ]
     }
 }
@@ -114,7 +127,6 @@ TEMPLATES = {
             {"name": "End Date", "type": "date", "data": {"item": datetime.datetime.now()}},
         ],
         "widgets": [
-            {"name": "Habit Progress", "type": "graph", "data": {"type": "line", "data_points": []}},
             {"name": "Daily Checklist", "type": "daily_todo", "data": {"selected_date": datetime.datetime.now().strftime("%Y-%m-%d")}},
         ],
     },
@@ -139,7 +151,6 @@ TEMPLATES = {
         ],
         "widgets": [
             {"name": "Expense Tracker", "type": "table", "data": {"columns": ["Date", "Category", "Amount"], "rows": []}},
-            {"name": "Savings Progress", "type": "graph", "data": {"type": "bar", "data_points": []}},
         ],
     },
 }

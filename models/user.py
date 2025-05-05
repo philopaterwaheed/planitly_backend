@@ -1,4 +1,4 @@
-from mongoengine import Document, StringField, EmailField, BooleanField, DateTimeField, IntField, ListField
+from mongoengine import Document, StringField, EmailField, BooleanField, DateTimeField, IntField, ListField , DictField
 from .tokens import RefreshToken
 from .devices import Device_db
 import datetime
@@ -18,6 +18,7 @@ class User(Document):
     lastname = StringField(required=True)
     phone_number = StringField(required=True)
     birthday = DateTimeField(required=True)
+    default_subjects = ListField(DictField())
 
     meta = {'collection': 'users'}
 

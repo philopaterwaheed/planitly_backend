@@ -57,8 +57,8 @@ class Subject:
                 widget_type, reference_component, data)
 
             widget = Widget(
-                widget_name=widget_name,
-                type=widget_type,
+                name=widget_name,
+                widget_type=widget_type,
                 host_subject=self.id,
                 data=validated_data,
                 reference_component=reference_component,

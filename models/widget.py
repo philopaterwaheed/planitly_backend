@@ -1,7 +1,7 @@
 # models/widget.py
 import uuid
 from datetime import datetime
-from mongoengine import Document, StringField, DictField, ReferenceField, NULLIFY, DateTimeField
+from mongoengine import Document, StringField, DictField, ReferenceField, NULLIFY, DateTimeField , BooleanField
 from mongoengine.errors import DoesNotExist, ValidationError
 from .component import Component_db
 
@@ -9,22 +9,22 @@ from .component import Component_db
 class Widget_db(Document):
     id = StringField(primary_key=True)
     name = StringField(required=True)  
-    type = StringField(required=True)
+    widget_type = StringField(required=True)
     host_subject = ReferenceField(
         "Subject_db", required=True)
     data = DictField(null=True)
     reference_component = ReferenceField(
         Component_db, reverse_delete_rule=NULLIFY)
     owner = StringField(required=True)
-    is_deletable = StringField(default="true")
+    is_deletable = BooleanField(default="true")
     meta = {'collection': 'widgets'}
 
 
 class Widget:
-    def __init__(self, id=None, name=None, type=None, host_subject=None, data=None, reference_component=None, owner=None, is_deletable=True):
+    def __init__(self, id=None, name=None, widget_type=None, host_subject=None, data=None, reference_component=None, owner=None, is_deletable=True):
         self.id = id or str(uuid.uuid4())
         self.name = name  # New field
-        self.type = type
+        self.widget_type = widget_type
         self.host_subject = host_subject
         self.data = data
         self.reference_component = reference_component
@@ -35,7 +35,7 @@ class Widget:
         return {
             "id": self.id,
             "name": self.name,  # Include name in JSON
-            "type": self.type,
+            "widget_type": self.widget_type,
             "host_subject": self.host_subject,
             "data": self.data,
             "reference_component": self.reference_component,
@@ -48,7 +48,7 @@ class Widget:
         widget = Widget(
             id=data["id"],
             name=data["name"],  # Parse name from JSON
-            type=data["type"],
+            widget_type=data["widget_type"],
             host_subject=data["host_subject"],
             data=data.get("data"),
             reference_component=data.get("reference_component"),
@@ -61,7 +61,7 @@ class Widget:
         widget_db = Widget_db(
             id=self.id,
             name=self.name,  # Save name to database
-            type=self.type,
+            widget_type=self.widget_type,
             host_subject=self.host_subject,
             data=self.data,
             reference_component=self.reference_component,
@@ -79,7 +79,7 @@ class Widget:
                 widget = Widget(
                     id=widget_db.id,
                     name=widget_db.name,  # Load name from database
-                    type=widget_db.type,
+                    widget_type=widget_db.widget_type,
                     host_subject=widget_db.host_subject.id if widget_db.host_subject else None,
                     data=widget_db.data,
                     reference_component=widget_db.reference_component.id if widget_db.reference_component else None,

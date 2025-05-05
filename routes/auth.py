@@ -17,8 +17,9 @@ router = APIRouter(prefix="/auth", tags=["Auth"])
 
 
 async def create_default_subjects_for_user(user_id):
-    """Create default non-deletable subjects for a new user."""
+    """Create default non-deletable subjects for a new user and return their IDs."""
     try:
+        subject_ids = []
         for template_key, template_data in DEFAULT_USER_TEMPLATES.items():
             # Create a new subject with the template
             subject = Subject(
@@ -29,10 +30,15 @@ async def create_default_subjects_for_user(user_id):
                 category=template_data.get("category", "system")
             )
             subject.save_to_db()
+            if not subject.id:
+                raise Exception(f"Failed to save subject: {template_data['name']}")
+
+            subject_ids.append({"name":subject.name,"id":subject.id})
 
             # Add the components from the template
             for comp_data in template_data["components"]:
-                # For date components, set to current date
+                if "type" not in comp_data:
+                    raise KeyError(f"Missing 'type' in component: {comp_data}")
                 if comp_data["type"] == "date" and comp_data["name"] == "Joined Date":
                     comp_data["data"]["item"] = datetime.datetime.now().isoformat()
 
@@ -46,10 +52,10 @@ async def create_default_subjects_for_user(user_id):
             # Add widgets from the template if they exist
             if "widgets" in template_data:
                 for widget_data in template_data["widgets"]:
-                    # Check if widget requires a reference to a component
+                    if "type" not in widget_data:
+                        raise KeyError(f"Missing 'type' in widget: {widget_data}")
                     reference_component = None
                     if "reference_component" in widget_data:
-                        # Find the component ID by name
                         ref_comp_name = widget_data["reference_component"]
                         for comp_id in subject.components:
                             component = Component.load_from_db(comp_id)
@@ -57,7 +63,6 @@ async def create_default_subjects_for_user(user_id):
                                 reference_component = comp_id
                                 break
 
-                    # Add the widget to the subject
                     await subject.add_widget(
                         widget_name=widget_data["name"],
                         widget_type=widget_data["type"],
@@ -66,10 +71,13 @@ async def create_default_subjects_for_user(user_id):
                         is_deletable=widget_data.get("is_deletable", True)
                     )
 
-        return True
-    except Exception as e:
+        return subject_ids
+    except KeyError as e:
         print(f"Error creating default subjects: {str(e)}")
-        return False
+        return []
+    except Exception as e:
+        print(f"Unexpected error creating default subjects: {str(e)}")
+        return []
 
 
 @router.post("/register", status_code=status.HTTP_201_CREATED)
@@ -180,10 +188,8 @@ async def register(user_data: dict, request: Request):
             user.save()
 
             # Create default subjects for the new user
-            subjects_created = await create_default_subjects_for_user(str(user.id))
             return {
                 "message": "User registered successfully",
-                "default_subjects_created": subjects_created,
                 "status_code": 201,
             }
         except FirebaseAuthError as e:
@@ -214,15 +220,25 @@ async def login_user(user_data: dict, request: Request):
         password = user_data.get("password")
 
         device_id = get_device_identifier(request)
-        user_agent = request.headers.get(
-            "user-agent", "")  
+        user_agent = request.headers.get("user-agent", "")
         agent_info = user_agents.parse(user_agent)
-        print (f"User Agent: {agent_info}")
         device_name = f"{agent_info.device.family} {agent_info.os.family} {agent_info.os.version_string}"
         client_ip = request.client.host
-        print (f"Client IP: {client_ip}")
 
-        # Optional: Get location data from IP
+
+        # Authenticate the user
+        user, error_message = await authenticate_user(username_or_email, password, device_id)
+        if not user:
+            raise HTTPException(status_code=401, detail=error_message)
+
+        # Check if email is verified and create default subjects if it's the first verified login
+        if user.email_verified and not user.default_subjects:
+            subject_ids = await create_default_subjects_for_user(str(user.id))
+            user.default_subjects = subject_ids
+            user.save()
+
+        user_id_str = str(user.id)
+        # Track the device in the database
         location = {}
         try:
             response = await get_ip_info(client_ip)
@@ -230,22 +246,16 @@ async def login_user(user_data: dict, request: Request):
                 raise Exception(response)
             response = response.json()
             location = {
-            "country": response.get("country", "Unknown"),
-            "city": response.get("city", "Unknown"),
-            "region": response.get("region", "Unknown"),
+                "country": response.get("country", "Unknown"),
+                "city": response.get("city", "Unknown"),
+                "region": response.get("region", "Unknown"),
             }
         except Exception as e:
-            print(f"Error retrieving location data: {str(e)}")
             location = {
                 "country": "Unknown",
                 "city": "Unknown",
                 "region": "Unknown",
             }
-        user, error_message = await authenticate_user(username_or_email, password, device_id)
-        if not user:
-            raise HTTPException(status_code=401, detail=error_message)
-        user_id_str = str(user.id)
-        # Track the device in the database
         device = Device_db(
             user_id=user_id_str,
             device_name=device_name,
@@ -268,6 +278,7 @@ async def login_user(user_data: dict, request: Request):
             "accessToken": access_token,
             "refreshToken": refresh_token,
             "email_verified": user.email_verified,
+            "defualt_subjects": user.default_subjects,
             "status": 201
         }
 
