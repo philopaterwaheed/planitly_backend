@@ -6,14 +6,18 @@ from pytz import UTC  # type: ignore
 from datetime import datetime
 
 ACCEPTED_OPERATIONS = {
+    "pair": ["update_key", "update_value"],
+    "Array_of_pairs": ["append", "remove_back", "remove_front", "delete_at", "push_at", "update_pair"],
+    "Array_type": ["append", "remove_back", "remove_front", "delete_at", "push_at", "update_at"],
+    "Array_generic": ["append", "remove_back", "remove_front", "delete_at", "push_at", "update_at"],
+    "Array_of_strings": ["append", "remove_back", "remove_front", "delete_at", "push_at", "update_at"],
+    "Array_of_booleans": ["append", "remove_back", "remove_front", "delete_at", "push_at", "update_at"],
+    "Array_of_dates": ["append", "remove_back", "remove_front", "delete_at", "push_at", "update_at"],
+    "Array_of_objects": ["append", "remove_back", "remove_front", "delete_at", "push_at", "update_at"],
     "int": ["replace", "add", "multiply"],
     "str": ["replace"],
-    "date": ["replace"],
     "bool": ["replace", "toggle"],
-    "Array_type": ["replace", "append", "remove_back", "remove_front", "delete_at", "push_at"],
-    "Array_generic": ["replace", "append", "remove_back", "remove_front", "delete_at", "push_at"],
-    "pair": ["replace", "update_key", "update_value"],  # New operations for pair
-    "Array_of_pairs": ["replace", "append", "remove_back", "remove_front", "delete_at", "push_at", "update_pair"],  # New operations for Array_of_pairs
+    "date": ["replace"]
 }
 
 
@@ -84,14 +88,26 @@ class DataTransfer:
                 return
             source_value = source_component.data.get("item")
         elif hasattr(self, 'data_value') and self.data_value is not None:
-            if not isinstance(self.data_value, dict) or "item" not in self.data_value:
+            # For direct data_value, we should check if it contains "item" key
+            # But for certain operations like delete_at, push_at, update_pair, the structure is different
+            if self.operation in ["delete_at", "push_at", "update_pair", "update_at"] and isinstance(self.data_value, dict):
+                source_value = self.data_value  # Use the whole data_value for special operations
+            elif not isinstance(self.data_value, dict) or "item" not in self.data_value:
                 print("Invalid data_value structure. Expected {'item': value}.")
                 return
-            source_value = self.data_value.get("item")
+            else:
+                source_value = self.data_value.get("item")
 
         # Validate target component data structure
-        if not isinstance(target_component.data, dict) or "item" not in target_component.data:
+        if not isinstance(target_component.data, dict):
             print(f"Invalid target component data structure for '{target_component.comp_type}'.")
+            return
+            
+        # For array types, we need to initialize the item if it doesn't exist
+        if target_component.comp_type.startswith("Array_") and "item" not in target_component.data:
+            target_component.data["item"] = []
+        elif "item" not in target_component.data and target_component.comp_type != "Array_of_pairs":
+            print(f"Invalid target component data structure for '{target_component.comp_type}'. Missing 'item' key.")
             return
 
         # Handle operations based on target component type
@@ -107,6 +123,10 @@ class DataTransfer:
 
     def _execute_pair_operation(self, target_component, source_value):
         """Handle operations specific to pair component type"""
+        # Initialize item if it doesn't exist
+        if "item" not in target_component.data:
+            target_component.data["item"] = {"key": "", "value": ""}
+        
         # Validate pair structure
         if not isinstance(target_component.data["item"], dict) or \
         "key" not in target_component.data["item"] or \
@@ -163,19 +183,18 @@ class DataTransfer:
 
     def _execute_array_of_pairs_operation(self, target_component, source_value):
         """Handle operations specific to Array_of_pairs component type"""
-        # Validate array structure
-        if not isinstance(source_value, dict):
-            print("Invalid source value for 'Array_of_pairs'. Expected {'key': key, 'value': value}.")
-            return
-        if not isinstance(target_component.data.get("type"), dict) :
-            print (target_component.data)
-            print("Invalid target component aaaaaaa data structure for 'Array_of_pairs'. Expected {'type': {'key': key_type, 'value': value_type}}.")
+        # Initialize the item array if it doesn't exist
+        if "item" not in target_component.data:
+            target_component.data["item"] = []
+        
+        # Ensure we have a valid type specification
+        if not isinstance(target_component.data.get("type"), dict) or "key" not in target_component.data["type"] or "value" not in target_component.data["type"]:
+            print("Invalid target component data structure for 'Array_of_pairs'. Expected {'type': {'key': key_type, 'value': value_type}}.")
             return
 
         # Check pair type requirements
-        pair_type = target_component.data.get("type", {})
-        key_type = pair_type.get("key") if isinstance(pair_type, dict) else None
-        value_type = pair_type.get("value") if isinstance(pair_type, dict) else None
+        key_type = target_component.data["type"].get("key")
+        value_type = target_component.data["type"].get("value")
 
         if self.operation == "append":
             # Validate source_value structure for append operation
@@ -228,18 +247,13 @@ class DataTransfer:
             
         elif self.operation == "delete_at":
             # Validate index parameter
-            if not hasattr(self, 'data_value') or not isinstance(self.data_value, dict) or "index" not in self.data_value:
+            if not isinstance(source_value, dict) or "index" not in source_value:
                 print("Missing 'index' in data_value for 'delete_at' operation.")
                 return
                 
-            index = self.data_value.get("index")
+            index = source_value.get("index")
             if not isinstance(index, int):
                 print(f"Invalid index type: expected int, got {type(index).__name__}.")
-                return
-                
-            # Check if index is within bounds
-            if index >= len(target_component.data["item"]) or (index < 0 and abs(index) > len(target_component.data["item"])):
-                print(f"Index {index} out of bounds for array of length {len(target_component.data['item'])}.")
                 return
                 
             result = Arrays.remove_at_index(
@@ -250,28 +264,23 @@ class DataTransfer:
             
         elif self.operation == "push_at":
             # Validate parameters
-            if not hasattr(self, 'data_value') or not isinstance(self.data_value, dict):
+            if not isinstance(source_value, dict):
                 print("Invalid data_value structure for 'push_at' operation.")
                 return
                 
-            if "index" not in self.data_value:
+            if "index" not in source_value:
                 print("Missing 'index' in data_value for 'push_at' operation.")
                 return
                 
-            if "pair" not in self.data_value:
+            if "item" not in source_value:
                 print("Missing 'pair' in data_value for 'push_at' operation.")
                 return
                 
-            index = self.data_value.get("index")
-            pair = self.data_value.get("pair")
+            index = source_value.get("index")
+            pair = source_value.get("item")
             
             if not isinstance(index, int):
                 print(f"Invalid index type: expected int, got {type(index).__name__}.")
-                return
-                
-            # Check index boundaries (allow insert at end)
-            if index > len(target_component.data["item"]) or (index < 0 and abs(index) > len(target_component.data["item"])):
-                print(f"Index {index} out of bounds for array of length {len(target_component.data['item'])}.")
                 return
                 
             # Type check the pair
@@ -303,28 +312,23 @@ class DataTransfer:
             
         elif self.operation == "update_pair":
             # Validate parameters
-            if not hasattr(self, 'data_value') or not isinstance(self.data_value, dict):
+            if not isinstance(source_value, dict):
                 print("Invalid data_value structure for 'update_pair' operation.")
                 return
                 
-            if "index" not in self.data_value:
+            if "index" not in source_value:
                 print("Missing 'index' in data_value for 'update_pair' operation.")
                 return
                 
-            if "pair" not in self.data_value:
+            if "item" not in source_value:
                 print("Missing 'pair' in data_value for 'update_pair' operation.")
                 return
                 
-            index = self.data_value.get("index")
-            pair = self.data_value.get("pair")
+            index = source_value.get("index")
+            pair = source_value.get("item")
             
             if not isinstance(index, int):
                 print(f"Invalid index type: expected int, got {type(index).__name__}.")
-                return
-                
-            # Check if index is within bounds
-            if index >= len(target_component.data["item"]) or (index < 0 and abs(index) > len(target_component.data["item"])):
-                print(f"Index {index} out of bounds for array of length {len(target_component.data['item'])}.")
                 return
                 
             # Type check the pair
@@ -358,8 +362,8 @@ class DataTransfer:
             print(f"Unsupported operation '{self.operation}' for Array_of_pairs.")
             return
 
-        if not result["success"]:
-            print(f"Array_of_pairs operation failed: {result['message']}")
+        if not result.get("success", False):
+            print(f"Array_of_pairs operation failed: {result.get('message', 'Unknown error')}")
             return
 
         self._mark_as_done(target_component)
@@ -367,13 +371,22 @@ class DataTransfer:
 
     def _execute_array_operation(self, target_component, source_value):
         """Handle operations specific to array component types"""
+        # Initialize item if it doesn't exist
+        if "item" not in target_component.data:
+            target_component.data["item"] = []
+            
         # Validate array structure
         if not isinstance(target_component.data["item"], list):
             print(f"Invalid target component data structure for '{target_component.comp_type}'. Expected {'item': [values]}.")
             return
 
-        # Check array element type requirement
-        array_type = target_component.data.get("type")
+        # Check array element type requirement - handle both simple string type and dict with "type" key
+        array_type = None
+        if "type" in target_component.data:
+            if isinstance(target_component.data["type"], str):
+                array_type = target_component.data["type"]
+            elif isinstance(target_component.data["type"], dict) and "type" in target_component.data["type"]:
+                array_type = target_component.data["type"]["type"]
         
         if self.operation == "append":
             # Type check the value based on array type
@@ -428,19 +441,15 @@ class DataTransfer:
             
         elif self.operation == "delete_at":
             # Validate index parameter
-            if not hasattr(self, 'data_value') or not isinstance(self.data_value, dict) or "index" not in self.data_value:
+            if not isinstance(source_value, dict) or "index" not in source_value:
                 print("Missing 'index' in data_value for 'delete_at' operation.")
                 return
                 
-            index = self.data_value.get("index")
+            index = source_value.get("index")
             if not isinstance(index, int):
                 print(f"Invalid index type: expected int, got {type(index).__name__}.")
                 return
                 
-            # Check if index is within bounds
-            if index >= len(target_component.data["item"]) or (index < 0 and abs(index) > len(target_component.data["item"])):
-                print(f"Index {index} out of bounds for array of length {len(target_component.data['item'])}.")
-                return
                 
             result = Arrays.remove_at_index(
                 user_id=target_component.owner,
@@ -450,28 +459,23 @@ class DataTransfer:
             
         elif self.operation == "push_at":
             # Validate parameters
-            if not hasattr(self, 'data_value') or not isinstance(self.data_value, dict):
+            if not isinstance(source_value, dict):
                 print("Invalid data_value structure for 'push_at' operation.")
                 return
                 
-            if "index" not in self.data_value:
+            if "index" not in source_value:
                 print("Missing 'index' in data_value for 'push_at' operation.")
                 return
                 
-            if "value" not in self.data_value:
+            if "value" not in source_value:
                 print("Missing 'value' in data_value for 'push_at' operation.")
                 return
                 
-            index = self.data_value.get("index")
-            value = self.data_value.get("value")
+            index = source_value.get("index")
+            value = source_value.get("value")
             
             if not isinstance(index, int):
                 print(f"Invalid index type: expected int, got {type(index).__name__}.")
-                return
-                
-            # Check index boundaries (allow insert at end)
-            if index > len(target_component.data["item"]) or (index < 0 and abs(index) > len(target_component.data["item"])):
-                print(f"Index {index} out of bounds for array of length {len(target_component.data['item'])}.")
                 return
                 
             # Type check the value based on array type
@@ -502,13 +506,64 @@ class DataTransfer:
                 index=index,
                 value=value
             )
+        
+        elif self.operation == "update_at":
+            # Validate parameters
+            if not isinstance(source_value, dict):
+                print("Invalid data_value structure for 'update_at' operation.")
+                return
+                
+            if "index" not in source_value:
+                print("Missing 'index' in data_value for 'update_at' operation.")
+                return
+                
+            if "value" not in source_value:
+                print("Missing 'value' in data_value for 'update_at' operation.")
+                return
+                
+            index = source_value.get("index")
+            value = source_value.get("value")
+            
+            if not isinstance(index, int):
+                print(f"Invalid index type: expected int, got {type(index).__name__}.")
+                return
+                
+                
+            # Type check the value based on array type
+            if array_type and array_type != "any":
+                if array_type == "int" and not isinstance(value, int):
+                    print(f"Type mismatch: Expected int, got {type(value).__name__}.")
+                    return
+                elif array_type == "str" and not isinstance(value, str):
+                    print(f"Type mismatch: Expected string, got {type(value).__name__}.")
+                    return
+                elif array_type == "bool" and not isinstance(value, bool):
+                    print(f"Type mismatch: Expected boolean, got {type(value).__name__}.")
+                    return
+                elif array_type == "date" and not isinstance(value, str):
+                    # Basic ISO date format check
+                    try:
+                        datetime.datetime.fromisoformat(value)
+                    except (ValueError, TypeError):
+                        print(f"Type mismatch: Expected ISO date string, got invalid format: {value}.")
+                        return
+                elif array_type == "object" and not isinstance(value, dict):
+                    print(f"Type mismatch: Expected object (dict), got {type(value).__name__}.")
+                    return
+                    
+            result = Arrays.update_at_index(
+                user_id=target_component.owner,
+                component_id=target_component.id,
+                index=index,
+                value=value
+            )
             
         else:
             print(f"Unsupported operation '{self.operation}' for {target_component.comp_type}.")
             return
 
-        if not result["success"]:
-            print(f"Array operation failed: {result['message']}")
+        if not result.get("success", False):
+            print(f"Array operation failed: {result.get('message', 'Unknown error')}")
             return
 
         self._mark_as_done(target_component)
