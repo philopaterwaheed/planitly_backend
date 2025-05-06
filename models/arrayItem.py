@@ -189,7 +189,7 @@ class Arrays:
             ).order_by('index').skip(skip_count).limit(page_size)
 
             # Convert to pure array
-            result_array = [element.value for element in elements]
+            result_array = [{"value" : element.value , "created_at" : element.created_at} for element in elements]
             print(f"Retrieved {len(result_array)} items for page {page}")
 
             # Return with pagination information
