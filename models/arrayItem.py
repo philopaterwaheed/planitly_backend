@@ -60,6 +60,7 @@ class ArrayItem_db(Document):
 class Arrays:
     """Manager class for array operations using MongoEngine."""
 
+    @staticmethod
     def create_array(self, user_id, component_id, array_name, initial_elements=None):
         """Create a new array for a user."""
         try:
@@ -103,6 +104,7 @@ class Arrays:
         except Exception as e:
             return {"success": False, "message": f"Error creating array: {e}"}
 
+    @staticmethod
     def get_array(self, user_id, component_id):
         """Get an array by user_id and array_na"""
         try:
@@ -128,6 +130,7 @@ class Arrays:
         except Exception as e:
             return {"success": False, "message": f"Error retrieving array: {e}"}
 
+    @staticmethod
     def append_to_array(self, user_id, component_id, value):
         """Append a value to the end of an array."""
         try:
@@ -160,6 +163,7 @@ class Arrays:
         except Exception as e:
             return {"success": False, "message": f"Error appending to array: {e}"}
 
+    @staticmethod
     def insert_at_index(self, user_id, component_id, index, value):
         """Insert a value at a specific index in the array."""
         try:
@@ -232,6 +236,7 @@ class Arrays:
         except Exception as e:
             return {"success": False, "message": f"Error inserting at index: {e}"}
 
+    @staticmethod
     def update_at_index(self, user_id, component_id, index, value):
         """Update the value at a specific index in the array."""
         try:
@@ -260,6 +265,7 @@ class Arrays:
         except Exception as e:
             return {"success": False, "message": f"Error updating at index: {e}"}
 
+    @staticmethod
     def remove_at_index(self, user_id, component_id, index):
         """Remove the value at a specific index in the array."""
         try:
@@ -336,6 +342,7 @@ class Arrays:
         except Exception as e:
             return {"success": False, "message": f"Error removing at index: {e}"}
 
+    @staticmethod
     def search_in_array(self, user_id, component_id, value):
         """Search for a value in the array and return its index(es)."""
         try:
@@ -360,6 +367,7 @@ class Arrays:
         except Exception as e:
             return {"success": False, "message": f"Error searching in array: {e}"}
 
+    @staticmethod
     def slice_array(self, user_id, component_id, start, end=None):
         """Get a slice of the array."""
         try:
@@ -385,6 +393,7 @@ class Arrays:
         except Exception as e:
             return {"success": False, "message": f"Error slicing array: {e}"}
 
+    @staticmethod
     def delete_array(self, user_id, component_id):
         """Delete an entire array."""
         try:
@@ -418,6 +427,7 @@ class Arrays:
         except Exception as e:
             return {"success": False, "message": f"Error deleting array: {e}"}
 
+    @staticmethod
     def list_arrays(self, component_id):
         """List all arrays for a user."""
         try:

@@ -1,4 +1,5 @@
 from .component import Component_db
+from .arrayItem import Arrays
 from mongoengine import Document, StringField, DictField, ReferenceField, DateTimeField, NULLIFY
 import uuid
 from pytz import UTC  # type: ignore
@@ -49,153 +50,161 @@ class DataTransfer:
             return
         source_component = target_component = None
         if self.source_component:
-            source_component = Component_db.objects(
-                id=self.source_component).first()
+            source_component = Component_db.objects(id=self.source_component).first()
         if self.target_component:
-            target_component = Component_db.objects(
-                id=self.target_component).first()
+            target_component = Component_db.objects(id=self.target_component).first()
 
-        if self.operation not in ACCEPTED_OPERATIONS[target_component.comp_type]:
-            print(f"Operation '{self.operation}' not supported for component type '{
-                  target_component.comp_type}'.")
+        if not target_component or self.operation not in ACCEPTED_OPERATIONS[target_component.comp_type]:
+            print(f"Operation '{self.operation}' not supported for component type '{target_component.comp_type}'.")
             return
 
-        """Perform the data transfer and apply the operation."""
-        if target_component:
-            if isinstance(target_component.data, dict) and "items" in target_component.data:
-                target_data = target_component.data.get("items")
-            elif "item" in target_component.data:
-                target_data = target_component.data
+        # Use source component data if available, else use unbound data_value
+        source_value = (source_component.data if source_component else self.data_value)["item"]
 
-            # Use source component data if available, else use unbound data_value
-            source_value = None
-            if source_component:
-                source_value = source_component.data
-            else:
-                source_value = self.data_value
-            if isinstance(source_value, dict) and len(source_value) == 1:
-                source_value = list(source_value.values())[0]
-            if isinstance(target_data, dict) and len(target_data) == 1:
-                target_data = list(target_data.values())[0]
-            # type checks
-            if target_component.comp_type == "Array_generic":
-                pass
-            elif target_component and target_component.comp_type.startswith("Array_type") and isinstance(target_data, list):
-                if source_component and source_component.comp_type != target_component.data["type"]:
-                    print(f"Source and target components must be of the same type.{
-                          type(self.data_value).__name__}.")
+        if target_component.comp_type == "pair":
+            # Operations for `pair`
+            if self.operation == "update_key":
+                if self.data_value and self.data_value.get("item"):
+                    new_key = self.data_value.get("item").get("key")
+                    if new_key:
+                        target_component.data["item"]["key"] = new_key
+                    else:
+                        print("Missing 'key' in data_value for update_key operation.")
+                        return
+                else:
+                    print("Invalid data_value or missing 'item' for update_key operation.")
                     return
-            elif (source_component is not None) and (source_component.comp_type != target_component.comp_type or type(source_value).__name__ != target_component.comp_type):
-                print(f"Source and target components must be of the same type.{
-                    type(source_value).__name__}{source_component.comp_type}.")
-                return
-            # by default the remove_front , remove_front don't need source data
-            if source_value is not None or self.operation == "remove_back" or self.operation == "remove_front":
-                print(source_value)
-                print(target_data)
-                # Perform operations based on type and specified action
-                if self.operation == "replace":
-                    target_data = source_value
-                elif self.operation == "add" and isinstance(source_value, (int, float)) and isinstance(target_data, (int, float)):
-                    target_data += source_value
-                elif self.operation == "multiply" and isinstance(source_value, (int, float)) and isinstance(target_data, (int, float)):
-                    target_data *= source_value
-                elif self.operation == "toggle" and isinstance(target_data, bool):
-                    target_data = not target_data
-                elif self.operation == "append" and isinstance(target_data, list) and (target_component.comp_type == "Array_generic" or type(source_value).__name__ == target_component.data["type"]):
-                    target_data.append(
-                        {"item": source_value, "id": str(uuid.uuid4())})
-                elif self.operation == "remove_back" and isinstance(target_data, list) and len(target_data) >= 0:
-                    removed = target_data.pop()
-                    if (isinstance(removed, dict)):
-                        self.details["removed"] = removed
-                elif self.operation == "remove_front" and isinstance(target_data, list) and len(target_data) >= 0:
-                    removed = target_data.pop(0)
-                    if (isinstance(removed, dict)):
-                        self.details["removed"] = removed
-                elif self.operation == "delete_at" and isinstance(target_data, list) and isinstance(self.data_value, dict) and "index" in self.data_value and (target_component.comp_type == "Array_generic" or type(target_data["item"]).__name__ == target_component.data["type"]):
-                    print(f"target_data index : {target_data}")
-                    index = self.data_value.get("index")
-                    removed = None
-                    if isinstance(index, int) and 0 <= index <= len(target_data):
-                        removed = target_data.pop(int(index))
-                    if (isinstance(removed, dict)):
-                        self.details["removed"] = removed
-                elif self.operation == "push_at" and isinstance(target_data, list) and isinstance(self.data_value, dict) and "index" in self.data_value and (target_component.comp_type == "Array_generic" or type(source_value["item"]).__name__ == target_component.data["type"]):
-                    index = self.data_value.get("index")
-                    item = source_value.get("item")
-                    if isinstance(index, int) and 0 <= index <= len(target_data):
-                        target_data.insert(
-                            index, {"item": source_value["item"], "id": str(uuid.uuid4())})
-                elif self.operation == "replace" and target_component.comp_type == "pair":
-                    target_data["key"] = source_value.get("key", target_data["key"])
-                    target_data["value"] = source_value.get("value", target_data["value"])
-                elif self.operation == "update_key" and target_component.comp_type == "pair":
-                    if "key" in source_value:
-                        target_data["key"] = source_value["key"]
-                elif self.operation == "update_value" and target_component.comp_type == "pair":
-                    if "value" in source_value:
-                        target_data["value"] = source_value["value"]
-                elif self.operation == "append" and target_component.comp_type == "Array_of_pairs":
-                    if isinstance(source_value, dict) and "key" in source_value and "value" in source_value:
-                        target_data.append(source_value)
-                elif self.operation == "remove_back" and target_component.comp_type == "Array_of_pairs":
-                    if len(target_data) > 0:
-                        removed = target_data.pop()
-                        self.details["removed"] = removed
-                elif self.operation == "remove_front" and target_component.comp_type == "Array_of_pairs":
-                    if len(target_data) > 0:
-                        removed = target_data.pop(0)
-                        self.details["removed"] = removed
-                elif self.operation == "delete_at" and target_component.comp_type == "Array_of_pairs":
-                    index = self.data_value.get("index")
-                    if isinstance(index, int) and 0 <= index < len(target_data):
-                        removed = target_data.pop(index)
-                        self.details["removed"] = removed
-                elif self.operation == "push_at" and target_component.comp_type == "Array_of_pairs":
-                    index = self.data_value.get("index")
-                    pair = self.data_value.get("pair")
-                    if isinstance(index, int) and 0 <= index <= len(target_data) and isinstance(pair, dict) and "key" in pair and "value" in pair:
-                        target_data.insert(index, pair)
-                elif self.operation == "update_pair" and target_component.comp_type == "Array_of_pairs":
-                    index = self.data_value.get("index")
-                    pair = self.data_value.get("pair")
-                    if isinstance(index, int) and 0 <= index < len(target_data) and isinstance(pair, dict):
-                        target_data[index].update(pair)
-                elif target_component.comp_type in ["Array_type", "Array_generic"]:
-                    target_items = ArrayItem_db.objects(component=target_component.id)
-                    if self.operation == "append":
-                        ArrayItem_db(component=target_component.id, value=str(source_value)).save()
-                    elif self.operation == "remove_back" and target_items:
-                        target_items.order_by('-id').first().delete()
-                    elif self.operation == "remove_front" and target_items:
-                        target_items.order_by('id').first().delete()
-                    elif self.operation == "delete_at":
-                        index = self.data_value.get("index")
-                        if isinstance(index, int) and 0 <= index < len(target_items):
-                            target_items[index].delete()
-                    elif self.operation == "push_at":
-                        index = self.data_value.get("index")
-                        value = self.data_value.get("value")
-                        if isinstance(index, int) and value:
-                            ArrayItem_db(component=target_component.id, value=str(value)).save()
-                    return True
+            elif self.operation == "update_value":
+                if self.data_value and self.data_value.get("item"):
+                    new_value = self.data_value.get("item").get("value")
+                    if new_value:
+                        target_component.data["item"]["value"] = new_value
+                    else:
+                        print("Missing 'value' in data_value for update_value operation.")
+                        return
                 else:
-                    return False
-                if not (target_component.comp_type.startswith("Array") and isinstance(target_data, list)) or (target_component.comp_type not in ["Array_type", "Array_generic"]):
-                    target_component.data["item"] = target_data
-                else:
-                    target_component.data["items"] = target_data
-
-                self.details = {**(self.details or {}), "done": True}
-                target_component.save()
-                self.save_to_db()
-                print(f"Data transfer executed: {self.operation} on {target_component.id} with value {target_data}")
-                return True
+                    print("Invalid data_value or missing 'item' for update_value operation.")
+                    return
             else:
-                print(f"Source data not available for operation '{
-                      self.operation}'.")
-                return False
+                print(f"Unsupported operation '{self.operation}' for pair.")
+                return
+
+        elif target_component.comp_type == "Array_of_pairs":
+            # Operations for `Array_of_pairs`
+            if self.operation == "append":
+                result = Arrays.append_to_array(
+                    user_id=target_component.owner,
+                    component_id=target_component.id,
+                    value=source_value
+                )
+            elif self.operation == "remove_back":
+                result = Arrays.remove_at_index(
+                    user_id=target_component.owner,
+                    component_id=target_component.id,
+                    index=-1
+                )
+            elif self.operation == "remove_front":
+                result = Arrays.remove_at_index(
+                    user_id=target_component.owner,
+                    component_id=target_component.id,
+                    index=0
+                )
+            elif self.operation == "delete_at":
+                index = self.data_value.get("index")
+                result = Arrays.remove_at_index(
+                    user_id=target_component.owner,
+                    component_id=target_component.id,
+                    index=index
+                )
+            elif self.operation == "push_at":
+                index = self.data_value.get("index")
+                pair = self.data_value.get("pair")
+                result = Arrays.insert_at_index(
+                    user_id=target_component.owner,
+                    component_id=target_component.id,
+                    index=index,
+                    value=pair
+                )
+            elif self.operation == "update_pair":
+                index = self.data_value.get("index")
+                pair = self.data_value.get("pair")
+                result = Arrays.update_at_index(
+                    user_id=target_component.owner,
+                    component_id=target_component.id,
+                    index=index,
+                    value=pair
+                )
+            else:
+                print(f"Unsupported operation '{self.operation}' for Array_of_pairs.")
+                return
+
+            if not result["success"]:
+                print(f"Array_of_pairs operation failed: {result['message']}")
+                return
+
+        elif target_component.comp_type in ["Array_type", "Array_generic"]:
+            # Operations for generic arrays
+            if self.operation == "append":
+                result = Arrays.append_to_array(
+                    user_id=target_component.owner,
+                    component_id=target_component.id,
+                    value=source_value
+                )
+            elif self.operation == "remove_back":
+                result = Arrays.remove_at_index(
+                    user_id=target_component.owner,
+                    component_id=target_component.id,
+                    index=-1
+                )
+            elif self.operation == "remove_front":
+                result = Arrays.remove_at_index(
+                    user_id=target_component.owner,
+                    component_id=target_component.id,
+                    index=0
+                )
+            elif self.operation == "delete_at":
+                index = self.data_value.get("index")
+                result = Arrays.remove_at_index(
+                    user_id=target_component.owner,
+                    component_id=target_component.id,
+                    index=index
+                )
+            elif self.operation == "push_at":
+                index = self.data_value.get("index")
+                value = self.data_value.get("value")
+                result = Arrays.insert_at_index(
+                    user_id=target_component.owner,
+                    component_id=target_component.id,
+                    index=index,
+                    value=value
+                )
+            else:
+                print(f"Unsupported operation '{self.operation}' for array.")
+                return
+
+            if not result["success"]:
+                print(f"Array operation failed: {result['message']}")
+                return
+
+        else:
+            # Handle non-array operations
+            if self.operation == "replace":
+                target_component.data["item"] = source_value
+            elif self.operation == "add" and isinstance(source_value, (int, float)) and isinstance(target_component.data, (int, float)):
+                target_component.data["item"]+= source_value
+            elif self.operation == "multiply" and isinstance(source_value, (int, float)) and isinstance(target_component.data, (int, float)):
+                target_component.data ["item"]*= source_value
+            elif self.operation == "toggle" and isinstance(target_component.data, bool):
+                target_component.data ["item"]= not target_component.data
+            else:
+                print(f"Unsupported operation '{self.operation}' for non-array component.")
+                return
+
+        self.details = {**(self.details or {}), "done": True}
+        target_component.save()
+        self.save_to_db()
+        print(f"Data transfer executed: {self.operation} on {target_component.id}")
+        return True
 
     def to_json(self):
         return {

@@ -1,7 +1,7 @@
 from mongoengine import Document, StringField, DictField, ReferenceField, ListField, NULLIFY, BooleanField
 import uuid
 import datetime
-from .arrayItem import ArrayItem_db
+from .arrayItem import ArrayItem_db, ArrayMetadata
 
 # Predefined data and widget types
 PREDEFINED_COMPONENT_TYPES = {
@@ -20,10 +20,12 @@ class Component_db(Document):
     id = StringField(primary_key=True)
     name = StringField(required=True)
     host_subject = ReferenceField("Subject_db", required=True)
-    data = DictField()
-    comp_type = StringField(required=True)
-    owner = StringField(required=True)  # Store user ID
+    data = DictField(null=True)
+    comp_type = StringField(required=True)  # Component type (e.g., Array_type, str, etc.)
+    owner = StringField(required=True)
+    array_metadata = ReferenceField(ArrayMetadata, reverse_delete_rule=NULLIFY, required=False)  
     is_deletable = BooleanField(default=True)
+
     meta = {'collection': 'components'}
 
 

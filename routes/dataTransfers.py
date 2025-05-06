@@ -52,7 +52,7 @@ async def create_data_transfer(data: dict, user_device: tuple = Depends(verify_d
             data_value=data.get("data_value"),
             operation=data.get("operation"),
             schedule_time=schedule_time,
-            details=data.get("details"),
+            details=data.get("details") or {},
             owner = current_user.id
         )
 
