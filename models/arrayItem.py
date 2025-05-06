@@ -61,7 +61,7 @@ class Arrays:
     """Manager class for array operations using MongoEngine."""
 
     @staticmethod
-    def create_array(self, user_id, component_id, array_name, initial_elements=None):
+    def create_array( user_id, component_id, array_name, initial_elements=None):
         """Create a new array for a user."""
         try:
             # Get user by ID
@@ -103,10 +103,8 @@ class Arrays:
             return {"success": True, "message": f"Array '{array_name}' created successfully"}
         except Exception as e:
             return {"success": False, "message": f"Error creating array: {e}"}
-
     @staticmethod
-    def get_array(self, user_id, component_id):
-        """Get an array by user_id and array_na"""
+    def get_array(user_id, component_id, page=0, page_size=100):
         try:
             # Get user by ID
             user = User.objects(id=user_id).first()
@@ -119,19 +117,83 @@ class Arrays:
             if not array_metadata:
                 return {"success": False, "message": f"Array '{component_id}' not found"}
 
-            # Retrieve array elements sorted by index
+            # Get total count for pagination info
+            total_count = ArrayItem_db.objects(
+                user=user, array_metadata=array_metadata).count()
+                
+            # Calculate pagination values
+            total_pages = (total_count + page_size - 1) // page_size  # Ceiling division
+            
+            # Validate page number
+            if page < 0:
+                page = 0
+            if page >= total_pages and total_pages > 0:
+                page = total_pages - 1
+                
+            # Skip and limit for pagination
+            skip_count = page * page_size
+
+            # Retrieve array elements for this page sorted by index
             elements = ArrayItem_db.objects(
-                user=user, array_metadata=array_metadata).order_by('index')
+                user=user, array_metadata=array_metadata
+            ).order_by('index').skip(skip_count).limit(page_size)
 
             # Convert to pure array
             result_array = [element.value for element in elements]
+
+            # Return with pagination information
+            return {
+                "success": True, 
+                "array": result_array,
+                "pagination": {
+                    "page": page,
+                    "page_size": page_size,
+                    "total_items": total_count,
+                    "total_pages": total_pages,
+                    "has_next": page < total_pages - 1,
+                    "has_prev": page > 0
+                }
+            }
+        except Exception as e:
+            return {"success": False, "message": f"Error retrieving array: {e}"}
+
+    @staticmethod
+    def get_entire_array(user_id, component_id):
+        try:
+            # Get user by ID
+            user = User.objects(id=user_id).first()
+            if not user:
+                return {"success": False, "message": "User not found"}
+
+            # Get array metadata
+            array_metadata = ArrayMetadata.objects(
+                user=user, host_component=component_id).first()
+            if not array_metadata:
+                return {"success": False, "message": f"Array '{component_id}' not found"}
+
+            # Get total count
+            total_count = ArrayItem_db.objects(
+                user=user, array_metadata=array_metadata).count()
+                
+            # Initialize result array
+            result_array = []
+            
+            # Process in batches
+            BATCH_SIZE = 1000
+            for offset in range(0, total_count, BATCH_SIZE):
+                batch = ArrayItem_db.objects(
+                    user=user, array_metadata=array_metadata
+                ).order_by('index').skip(offset).limit(BATCH_SIZE)
+                
+                # Extend result array with batch values
+                result_array.extend([element.value for element in batch])
 
             return {"success": True, "array": result_array}
         except Exception as e:
             return {"success": False, "message": f"Error retrieving array: {e}"}
 
     @staticmethod
-    def append_to_array(self, user_id, component_id, value):
+    def append_to_array( user_id, component_id, value):
         """Append a value to the end of an array."""
         try:
             # Get user by ID
@@ -164,7 +226,7 @@ class Arrays:
             return {"success": False, "message": f"Error appending to array: {e}"}
 
     @staticmethod
-    def insert_at_index(self, user_id, component_id, index, value):
+    def insert_at_index( user_id, component_id, index, value):
         """Insert a value at a specific index in the array."""
         try:
             # Get user by ID
@@ -237,7 +299,7 @@ class Arrays:
             return {"success": False, "message": f"Error inserting at index: {e}"}
 
     @staticmethod
-    def update_at_index(self, user_id, component_id, index, value):
+    def update_at_index( user_id, component_id, index, value):
         """Update the value at a specific index in the array."""
         try:
             # Get user by ID
@@ -266,7 +328,7 @@ class Arrays:
             return {"success": False, "message": f"Error updating at index: {e}"}
 
     @staticmethod
-    def remove_at_index(self, user_id, component_id, index):
+    def remove_at_index( user_id, component_id, index):
         """Remove the value at a specific index in the array."""
         try:
             # Get user by ID
@@ -343,7 +405,7 @@ class Arrays:
             return {"success": False, "message": f"Error removing at index: {e}"}
 
     @staticmethod
-    def search_in_array(self, user_id, component_id, value):
+    def search_in_array( user_id, component_id, value):
         """Search for a value in the array and return its index(es)."""
         try:
             # Get user by ID
@@ -394,7 +456,7 @@ class Arrays:
             return {"success": False, "message": f"Error slicing array: {e}"}
 
     @staticmethod
-    def delete_array(self, user_id, component_id):
+    def delete_array( user_id, component_id):
         """Delete an entire array."""
         try:
             # Get user by ID
@@ -428,7 +490,7 @@ class Arrays:
             return {"success": False, "message": f"Error deleting array: {e}"}
 
     @staticmethod
-    def list_arrays(self, component_id):
+    def list_arrays( component_id):
         """List all arrays for a user."""
         try:
             # Get user by ID
