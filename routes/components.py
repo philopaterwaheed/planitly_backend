@@ -68,24 +68,36 @@ async def create_component(data: dict, user_device: tuple = Depends(verify_devic
 
 
 @router.get("/{component_id}", status_code=status.HTTP_200_OK)
-async def get_component(component_id: str, user_device: tuple = Depends(verify_device)):
+async def get_component(
+    component_id: str,
+    user_device: tuple = Depends(verify_device),
+    page: int = 0,
+    page_size: int = 10
+):
     current_user, device_id = user_device
     try:
         component = Component_db.objects.get(id=component_id)
         if component.owner != current_user.id and not current_user.admin:
             raise HTTPException(status_code=403, detail="Not authorized to access this component.")
 
-        # Handle Array_type components
-        if component.comp_type in ["Array_type", "Array_generic", "Array_of_pairs"]  and component.array_metadata: #todo add more types
+        # Handle Array_type components with optional pagination
+        if component.comp_type in ["Array_type", "Array_generic", "Array_of_pairs"] and component.array_metadata:
             array_result = Arrays.get_array(
                 user_id=current_user.id,
-                component_id=component_id
+                component_id=component_id,
+                page=page,
+                page_size= page_size
             )
             if not array_result["success"]:
                 raise HTTPException(status_code=500, detail=array_result["message"])
 
             component_data = component.to_mongo().to_dict()
             component_data["array_items"] = array_result["array"]
+            component_data["pagination"] = {
+                "page": page,
+                "page_size": page_size,
+                "total": array_result.get("total", len(array_result["array"]))
+            }
             return component_data
 
         return component.to_mongo().to_dict()

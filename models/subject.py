@@ -5,6 +5,7 @@ import uuid
 from mongoengine import Document, StringField, DictField, ReferenceField, ListField, BooleanField, NULLIFY
 from mongoengine.errors import DoesNotExist, ValidationError
 from .templets import TEMPLATES
+from .arrayItem import Arrays
 
 
 # use the Subject_db class to interact with the database directly without the helper
@@ -42,9 +43,20 @@ class Subject:
                                   data=data,
                                   is_deletable=is_deletable)
             component.host_subject = self.id
+            
+
             component.save_to_db()
             # add a reference to the component in the subject if saved
             self.components.append(component.id)
+            # Handle Array_type and Array_generic components
+            if component.comp_type in ["Array_type", "Array_generic", "Array_of_pairs"]:
+                array_metadata_result = Arrays.create_array(
+                    user_id=component.owner,
+                    component_id=component.id,
+                    array_name=component.name,
+                )
+                if not array_metadata_result["success"]:
+                    raise Exception(500, array_metadata_result["message"])
             self.save_to_db()
         else:
             print(f"Component type '{component_type}' is not defined.")

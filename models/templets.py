@@ -65,7 +65,7 @@ DEFAULT_USER_TEMPLATES = {
             {
                 "name": "habits",
                 "type": "Array_type",
-                "data": {"items": [], "type": "str"},
+                "data": {"type": "str"},  # Specify the type of items in the array
                 "is_deletable": False
             }
         ],
@@ -81,21 +81,13 @@ DEFAULT_USER_TEMPLATES = {
             {
                 "name": "Income",
                 "type": "Array_of_pairs",
-                "data": {
-                    "items": [
-                        {"name": "salary", "amount": 6}
-                    ],
-                },
+                "data": {"type": {"key": "str", "value": "int"}},  # Specify the key and value types
                 "is_deletable": False
             },
             {
                 "name": "Expenses",
                 "type": "Array_of_pairs",
-                "data": {
-                    "items": [
-                        {"name":"food", "amount": 99}
-                    ],
-                },
+                "data": {"type": {"key": "str", "value": "int"}},  # Specify the key and value types
                 "is_deletable": False
             },
             {
@@ -117,6 +109,7 @@ DEFAULT_USER_TEMPLATES = {
         ]
     }
 }
+
 TEMPLATES = {
     "habit": {
         "category": "Personal Development",  # Add category
@@ -145,8 +138,8 @@ TEMPLATES = {
     "financial_tracker": {
         "category": "Finance",  # Add category
         "components": [
-            {"name": "Income", "type": "Array_type", "data": {"items": [], "type": "int"}},
-            {"name": "Expenses", "type": "Array_type", "data": {"items": [], "type": "int"}},
+            {"name": "Income", "type": "Array_type", "data": {"type": "int"}},  # Specify the type of items in the array
+            {"name": "Expenses", "type": "Array_type", "data": {"type": "int"}},  # Specify the type of items in the array
             {"name": "Savings Goal", "type": "int", "data": {"item": 0}},
         ],
         "widgets": [

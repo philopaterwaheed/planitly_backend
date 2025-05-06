@@ -12,6 +12,7 @@ from .notifications import Notification_db , Notification , NotificationCount
 from .fcmtoken import FCMToken_db, FCMManager
 from .category import Category_db
 from .devices import Device_db
+from .arrayItem import ArrayItem_db, Arrays
 from mongoengine import connect
 from consts import env_variables
 

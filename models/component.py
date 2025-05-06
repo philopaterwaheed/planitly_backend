@@ -9,10 +9,14 @@ PREDEFINED_COMPONENT_TYPES = {
     "str": {"item": ""},
     "bool": {"item": False},
     "date": {"item": datetime.datetime.now().isoformat()},
-    "Array_type": None,
-    "Array_generic": None,
-    "pair": {"key": "", "value": ""},  # New pair type
-    "Array_of_pairs": None,  # New array of pairs type
+    "Array_type": {"type": "int"},  # Array of integers
+    "Array_generic": {"type": "any"},  # Array of any type
+    "pair": {"key": "str", "value": "any"},  # Pair with string key and any type value
+    "Array_of_pairs": {"type": {"key": "str", "value": "any"}},  # Array of pairs with string key and any type value
+    "Array_of_strings": {"type": "str"},  # Array of strings
+    "Array_of_booleans": {"type": "bool"},  # Array of booleans
+    "Array_of_dates": {"type": "date"},  # Array of dates
+    "Array_of_objects": {"type": "object"},  # Array of objects
 }
 
 
@@ -55,7 +59,7 @@ class Component:
             name=data["name"],
             data=data["data"],
             id=data["id"],
-            comp_type=data["type"],
+            comp_type=data["comp_type"],
             host_subject=data["host_subject"],
             owner=data.get("owner"),
             is_deletable=data.get("is_deletable", True)
@@ -102,13 +106,15 @@ class Component:
         if self.comp_type in ["Array_type", "Array_generic", "Array_of_pairs"]:
             result = Arrays.get_array(self.owner, self.id)
             if result["success"]:
-                return result["array"]
+                print ("Array items retrieved successfully.")
+                return result
         return None
 
     @staticmethod
     def load_from_db(comp_id):
-        component_db = Component_db.objects(id=comp_id).first()
+        component_db = Component_db.objects(id=str(comp_id)).first()
         if component_db:
+            print ("returning")
             return Component.from_json({
                 "name": component_db.name,
                 "id": component_db.id,
@@ -123,15 +129,16 @@ class Component:
     def get_component(self):
         if (self.comp_type in ["Array_type", "Array_generic", "Array_of_pairs"]):
             array_result = self.get_array_items()
+            print (array_result)
             if not array_result["success"]:
                 raise Exception(f"Error: {array_result['message']}")
-            self.data["items"] = array_result["array"]
+            self.data = {**(self.data or {}), "items": array_result["array"] , "pagination": array_result["pagination"]}
         return {
             "name": self.name,
             "id": self.id,
             "data": self.data,
             "comp_type": self.comp_type,
-            "host_subject": self.host_subject,
+            "host_subject": self.host_subject.id,
             "owner": self.owner,
             "is_deletable": self.is_deletable,
         }

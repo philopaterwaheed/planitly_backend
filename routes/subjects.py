@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from models import Subject_db
 from middleWares import verify_device, admin_required
-from models import User, Widget_db, Component, Subject, Subject_db,Category_db
+from models import Widget_db, Component, Subject, Category_db
 from mongoengine.queryset.visitor import Q
 from mongoengine.errors import DoesNotExist, ValidationError
 
@@ -216,8 +216,8 @@ async def get_subject_full_data(subject_id: str, user_device: tuple = Depends(ve
         components = []
         try:
             components = [
-                Component.load_from_db(component_id).get_component()
-                for component_id in (subject.components or [])
+                Component.load_from_db(component.id).get_component()
+                for component in (subject.components or [])
             ]
         except Exception as e:
             raise HTTPException(

@@ -2,7 +2,8 @@ import mongoengine as me
 from datetime import datetime
 import json
 from pymongo import UpdateOne
-from models import User, Component
+from .user import User
+# Removed the Component import from here to avoid circular import
 from mongoengine import Document, StringField, ReferenceField, DateTimeField, DynamicField, IntField
 from mongoengine.errors import NotUniqueError
 
@@ -11,7 +12,8 @@ class ArrayMetadata(Document):
     """Array metadata model."""
     user = ReferenceField(User, required=True)
     name = StringField(required=True)
-    host_component = ReferenceField(Component, required=True)
+    host_component = StringField(required=True)  # Changed to StringField to store Component ID as string
+    length = IntField(default=0)  # Added length field to track array size
     created_at = DateTimeField(default=datetime.now)
     meta = {
         'collection': 'array_metadata',
@@ -20,12 +22,14 @@ class ArrayMetadata(Document):
         ]
     }
 
+    @staticmethod
     def to_dict(self):
         """Convert ArrayMetadata document to dictionary."""
         return {
             "id": str(self.id),
             "user_id": str(self.user.id),
             "name": self.name,
+            "length": self.length if hasattr(self, 'length') else 0,
             "created_at": self.created_at
         }
 
@@ -59,9 +63,25 @@ class ArrayItem_db(Document):
 
 class Arrays:
     """Manager class for array operations using MongoEngine."""
+    
+    # Constants for limits
+    MAX_ARRAY_SIZE = 100000  # Maximum number of elements allowed in an array
+    MAX_VALUE_SIZE = 1048576  # 1MB maximum size for a single value (in bytes)
+    
+    @staticmethod
+    def _check_value_size(value):
+        """Check if value size is within limits."""
+        try:
+            # Try to estimate size using JSON serialization
+            value_size = len(json.dumps(value).encode('utf-8'))
+            if value_size > Arrays.MAX_VALUE_SIZE:
+                return False, f"Value size exceeds maximum allowed ({Arrays.MAX_VALUE_SIZE} bytes)"
+            return True, None
+        except (TypeError, OverflowError) as e:
+            return False, f"Unable to determine value size: {str(e)}"
 
     @staticmethod
-    def create_array( user_id, component_id, array_name, initial_elements=None):
+    def create_array(user_id, component_id, array_name, initial_elements=None):
         """Create a new array for a user."""
         try:
             # Get user by ID
@@ -69,18 +89,32 @@ class Arrays:
             if not user:
                 return {"success": False, "message": "User not found"}
 
-            component = Component.objects(id=component_id).first()
+            # Lazy import Component to avoid circular import
+            from .component import Component_db
+            component = Component_db.objects(id=component_id).first()
             if not component:
                 return {"success": False, "message": "Component not found for user"}
+                
             existing_array = ArrayMetadata.objects(
                 user=user, name=array_name).first()
             if existing_array:
                 return {"success": False, "message": f"Array '{array_name}' already exists for this user"}
+                
+            # Check initial elements size
+            if initial_elements:
+                if len(initial_elements) > Arrays.MAX_ARRAY_SIZE:
+                    return {"success": False, "message": f"Initial array size exceeds maximum allowed ({Arrays.MAX_ARRAY_SIZE} elements)"}
+                
+                # Check individual element sizes
+                for value in initial_elements:
+                    is_valid, error_msg = Arrays._check_value_size(value)
+                    if not is_valid:
+                        return {"success": False, "message": error_msg}
 
             # Create array metadata
             array_metadata = ArrayMetadata(
                 user=user,
-                host_component=component_id,
+                host_component=str(component_id),  # Store as string
                 name=array_name
             )
             array_metadata.save()
@@ -99,39 +133,55 @@ class Arrays:
 
                 if elements_to_insert:
                     ArrayItem_db.objects.insert(elements_to_insert)
+                    
+                # Update length in array metadata
+                array_metadata.length = len(initial_elements)
+                array_metadata.save()
 
             return {"success": True, "message": f"Array '{array_name}' created successfully"}
         except Exception as e:
             return {"success": False, "message": f"Error creating array: {e}"}
+    
     @staticmethod
     def get_array(user_id, component_id, page=0, page_size=100):
         try:
+            print ("entering get_array")
+            # Log the input parameters
+            print(f"get_array called with user_id={user_id}, component_id={component_id}, page={page}, page_size={page_size}")
+
             # Get user by ID
             user = User.objects(id=user_id).first()
             if not user:
+                print(f"User with id {user_id} not found")
                 return {"success": False, "message": "User not found"}
 
             # Get array metadata
             array_metadata = ArrayMetadata.objects(
-                user=user, host_component=component_id).first()
+                user=user, host_component=str(component_id)).first()
             if not array_metadata:
+                print(f"Array metadata for component_id {component_id} not found")
                 return {"success": False, "message": f"Array '{component_id}' not found"}
 
             # Get total count for pagination info
             total_count = ArrayItem_db.objects(
                 user=user, array_metadata=array_metadata).count()
+            print(f"Total items in array: {total_count}")
                 
             # Calculate pagination values
             total_pages = (total_count + page_size - 1) // page_size  # Ceiling division
-            
+            print(f"Total pages: {total_pages}")
+
             # Validate page number
             if page < 0:
+                print(f"Page number {page} is less than 0, resetting to 0")
                 page = 0
             if page >= total_pages and total_pages > 0:
+                print(f"Page number {page} exceeds total pages, resetting to {total_pages - 1}")
                 page = total_pages - 1
                 
             # Skip and limit for pagination
             skip_count = page * page_size
+            print(f"Skipping {skip_count} items, retrieving next {page_size} items")
 
             # Retrieve array elements for this page sorted by index
             elements = ArrayItem_db.objects(
@@ -140,6 +190,7 @@ class Arrays:
 
             # Convert to pure array
             result_array = [element.value for element in elements]
+            print(f"Retrieved {len(result_array)} items for page {page}")
 
             # Return with pagination information
             return {
@@ -155,6 +206,7 @@ class Arrays:
                 }
             }
         except Exception as e:
+            print(f"Error in get_array: {e}")
             return {"success": False, "message": f"Error retrieving array: {e}"}
 
     @staticmethod
@@ -167,7 +219,7 @@ class Arrays:
 
             # Get array metadata
             array_metadata = ArrayMetadata.objects(
-                user=user, host_component=component_id).first()
+                user=user, host_component=str(component_id)).first()
             if not array_metadata:
                 return {"success": False, "message": f"Array '{component_id}' not found"}
 
@@ -193,7 +245,7 @@ class Arrays:
             return {"success": False, "message": f"Error retrieving array: {e}"}
 
     @staticmethod
-    def append_to_array( user_id, component_id, value):
+    def append_to_array(user_id, component_id, value):
         """Append a value to the end of an array."""
         try:
             # Get user by ID
@@ -203,9 +255,21 @@ class Arrays:
 
             # Get array metadata
             array_metadata = ArrayMetadata.objects(
-                user=user, host_component=component_id).first()
+                user=user, host_component=str(component_id)).first()
             if not array_metadata:
                 return {"success": False, "message": f"Array '{component_id}' not found"}
+                
+            # Check value size
+            is_valid, error_msg = Arrays._check_value_size(value)
+            if not is_valid:
+                return {"success": False, "message": error_msg}
+                
+            # Check if appending would exceed the maximum array size
+            current_length = array_metadata.length if hasattr(array_metadata, 'length') else ArrayItem_db.objects(
+                user=user, array_metadata=array_metadata).count()
+                
+            if current_length >= Arrays.MAX_ARRAY_SIZE:
+                return {"success": False, "message": f"Cannot append: array size would exceed maximum allowed ({Arrays.MAX_ARRAY_SIZE} elements)"}
 
             # Get current array length
             last_element = ArrayItem_db.objects(
@@ -220,13 +284,17 @@ class Arrays:
                 value=value
             )
             element.save()
+            
+            # Update length in array metadata
+            array_metadata.length = new_index + 1
+            array_metadata.save()
 
             return {"success": True, "message": f"Value appended to array '{component_id}'"}
         except Exception as e:
             return {"success": False, "message": f"Error appending to array: {e}"}
 
     @staticmethod
-    def insert_at_index( user_id, component_id, index, value):
+    def insert_at_index(user_id, component_id, index, value):
         """Insert a value at a specific index in the array."""
         try:
             # Get user by ID
@@ -236,13 +304,22 @@ class Arrays:
 
             # Get array metadata
             array_metadata = ArrayMetadata.objects(
-                user=user, host_component=component_id).first()
+                user=user, host_component=str(component_id)).first()
             if not array_metadata:
                 return {"success": False, "message": f"Array '{component_id}' not found"}
 
+            # Check value size
+            is_valid, error_msg = Arrays._check_value_size(value)
+            if not is_valid:
+                return {"success": False, "message": error_msg}
+                
             # Get current array length for validation
-            count = ArrayItem_db.objects(
+            count = array_metadata.length if hasattr(array_metadata, 'length') else ArrayItem_db.objects(
                 user=user, array_metadata=array_metadata).count()
+                
+            # Check if inserting would exceed the maximum array size
+            if count >= Arrays.MAX_ARRAY_SIZE:
+                return {"success": False, "message": f"Cannot insert: array size would exceed maximum allowed ({Arrays.MAX_ARRAY_SIZE} elements)"}
 
             # Validate index
             if index < 0 or index > count:
@@ -251,6 +328,7 @@ class Arrays:
             # Use bulk update with pagination to shift elements efficiently
             PAGE_SIZE = 1000  #
             current_page = 0
+            bulk_operations = []  # Initialize outside the loop
 
             while True:
                 # Get a page of elements to update
@@ -265,8 +343,7 @@ class Arrays:
                 if not elements_list:
                     break
 
-                # Bulk update operations
-                bulk_operations = []
+                # Add to bulk operations
                 for element in elements_list:
                     bulk_operations.append(
                         UpdateOne(
@@ -275,11 +352,11 @@ class Arrays:
                         )
                     )
 
+                current_page += 1
+
             # Execute bulk update if there are operations
             if bulk_operations:
                 ArrayItem_db._get_collection().bulk_write(bulk_operations)
-
-            current_page += 1
 
             # Insert new element
             element = ArrayItem_db(
@@ -289,8 +366,8 @@ class Arrays:
                 value=value
             )
             element.save()
-
-            # Update array metadata if needed (e.g., length)
+            
+            # Update length in array metadata
             array_metadata.length = count + 1
             array_metadata.save()
 
@@ -299,7 +376,7 @@ class Arrays:
             return {"success": False, "message": f"Error inserting at index: {e}"}
 
     @staticmethod
-    def update_at_index( user_id, component_id, index, value):
+    def update_at_index(user_id, component_id, index, value):
         """Update the value at a specific index in the array."""
         try:
             # Get user by ID
@@ -307,11 +384,16 @@ class Arrays:
             if not user:
                 return {"success": False, "message": "User not found"}
 
-            # Get array metadata
+            # Get array metadata - fixed field name from component_id to host_component
             array_metadata = ArrayMetadata.objects(
-                user=user, component_id=component_id).first()
+                user=user, host_component=str(component_id)).first()
             if not array_metadata:
                 return {"success": False, "message": f"Array '{component_id}' not found"}
+                
+            # Check value size
+            is_valid, error_msg = Arrays._check_value_size(value)
+            if not is_valid:
+                return {"success": False, "message": error_msg}
 
             # Get element at index
             element = ArrayItem_db.objects(
@@ -328,7 +410,7 @@ class Arrays:
             return {"success": False, "message": f"Error updating at index: {e}"}
 
     @staticmethod
-    def remove_at_index( user_id, component_id, index):
+    def remove_at_index(user_id, component_id, index):
         """Remove the value at a specific index in the array."""
         try:
             # Get user by ID
@@ -338,7 +420,7 @@ class Arrays:
 
             # Get array metadata
             array_metadata = ArrayMetadata.objects(
-                user=user, host_component=component_id).first()
+                user=user, host_component=str(component_id)).first()
             if not array_metadata:
                 return {"success": False, "message": f"Array '{component_id}' not found"}
 
@@ -366,6 +448,7 @@ class Arrays:
             # Use bulk update with pagination to shift subsequent elements efficiently
             PAGE_SIZE = 1000  # Adjust based on your system resources
             current_page = 0
+            bulk_operations = []  # Initialize outside the loop
 
             while True:
                 # Get a page of elements to update (those with indices > index)
@@ -380,8 +463,7 @@ class Arrays:
                 if not elements_list:
                     break
 
-                # Bulk update operations
-                bulk_operations = []
+                # Add to bulk operations
                 for element in elements_list:
                     bulk_operations.append(
                         UpdateOne(
@@ -390,13 +472,13 @@ class Arrays:
                         )
                     )
 
-                # Execute bulk update if there are operations
-                if bulk_operations:
-                    ArrayItem_db._get_collection().bulk_write(bulk_operations)
-
                 current_page += 1
 
-            # Update array metadata if needed
+            # Execute bulk update if there are operations
+            if bulk_operations:
+                ArrayItem_db._get_collection().bulk_write(bulk_operations)
+                
+            # Update length in array metadata
             array_metadata.length = count - 1
             array_metadata.save()
 
@@ -405,7 +487,7 @@ class Arrays:
             return {"success": False, "message": f"Error removing at index: {e}"}
 
     @staticmethod
-    def search_in_array( user_id, component_id, value):
+    def search_in_array(user_id, component_id, value):
         """Search for a value in the array and return its index(es)."""
         try:
             # Get user by ID
@@ -415,7 +497,7 @@ class Arrays:
 
             # Get array metadata
             array_metadata = ArrayMetadata.objects(
-                user=user, host_component=component_id).first()
+                user=user, host_component=str(component_id)).first()
             if not array_metadata:
                 return {"success": False, "message": f"Array '{component_id}' not found"}
 
@@ -430,11 +512,11 @@ class Arrays:
             return {"success": False, "message": f"Error searching in array: {e}"}
 
     @staticmethod
-    def slice_array(self, user_id, component_id, start, end=None):
+    def slice_array(user_id, component_id, start, end=None):
         """Get a slice of the array."""
         try:
-            # Get the full array first
-            result = self.get_array(user_id, component_id)
+            # Get the full array first - fixed the self reference
+            result = Arrays.get_array(user_id, component_id)
             if not result["success"]:
                 return result
 
@@ -456,7 +538,7 @@ class Arrays:
             return {"success": False, "message": f"Error slicing array: {e}"}
 
     @staticmethod
-    def delete_array( user_id, component_id):
+    def delete_array(user_id, component_id):
         """Delete an entire array."""
         try:
             # Get user by ID
@@ -466,7 +548,7 @@ class Arrays:
 
             # Get array metadata
             array_metadata = ArrayMetadata.objects(
-                user=user, host_component=component_id).first()
+                user=user, host_component=str(component_id)).first()
             if not array_metadata:
                 return {"success": False, "message": f"Array '{component_id}' not found"}
 
@@ -490,13 +572,12 @@ class Arrays:
             return {"success": False, "message": f"Error deleting array: {e}"}
 
     @staticmethod
-    def list_arrays( component_id):
+    def list_arrays(component_id):
         """List all arrays for a user."""
         try:
-            # Get user by ID
-            # Get all array metadata for user
+            # Get all array metadata for the component
             array_metadata_list = ArrayMetadata.objects(
-                host_component=component_id)
+                host_component=str(component_id))
 
             # Get array metadata with counts
             arrays_info = []

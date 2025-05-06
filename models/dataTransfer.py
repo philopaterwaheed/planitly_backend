@@ -46,165 +46,548 @@ class DataTransfer:
         self.timestamp = datetime.now(UTC).isoformat()
 
     def execute(self):
-        if self.details.get("done"):
+        # Check if operation was already completed
+        if self.details and self.details.get("done"):
             return
+
+        # Fetch source and target components
         source_component = target_component = None
         if self.source_component:
             source_component = Component_db.objects(id=self.source_component).first()
+            if self.source_component and not source_component:
+                print(f"Source component with ID {self.source_component} not found.")
+                return
+                
         if self.target_component:
             target_component = Component_db.objects(id=self.target_component).first()
+        
+        if not target_component:
+            print(f"Target component with ID {self.target_component} not found.")
+            return
 
-        if not target_component or self.operation not in ACCEPTED_OPERATIONS[target_component.comp_type]:
+        # Validate operation type for target component
+        if self.operation not in ACCEPTED_OPERATIONS.get(target_component.comp_type, []):
             print(f"Operation '{self.operation}' not supported for component type '{target_component.comp_type}'.")
             return
 
+        # Type check data_value if it's being used
+        if not source_component and self.operation not in ["remove_back", "remove_front", "toggle"]:
+            if not hasattr(self, 'data_value') or self.data_value is None:
+                print("No source component or data_value provided for operation that requires input.")
+                return
+                
         # Use source component data if available, else use unbound data_value
-        source_value = (source_component.data if source_component else self.data_value)["item"]
+        source_value = None
+        if source_component:
+            if not isinstance(source_component.data, dict) or "item" not in source_component.data:
+                print("Invalid source component data structure.")
+                return
+            source_value = source_component.data.get("item")
+        elif hasattr(self, 'data_value') and self.data_value is not None:
+            if not isinstance(self.data_value, dict) or "item" not in self.data_value:
+                print("Invalid data_value structure. Expected {'item': value}.")
+                return
+            source_value = self.data_value.get("item")
 
+        # Validate target component data structure
+        if not isinstance(target_component.data, dict) or "item" not in target_component.data:
+            print(f"Invalid target component data structure for '{target_component.comp_type}'.")
+            return
+
+        # Handle operations based on target component type
         if target_component.comp_type == "pair":
-            # Operations for `pair`
-            if self.operation == "update_key":
-                if self.data_value and self.data_value.get("item"):
-                    new_key = self.data_value.get("item").get("key")
-                    if new_key:
-                        target_component.data["item"]["key"] = new_key
-                    else:
-                        print("Missing 'key' in data_value for update_key operation.")
-                        return
-                else:
-                    print("Invalid data_value or missing 'item' for update_key operation.")
-                    return
-            elif self.operation == "update_value":
-                if self.data_value and self.data_value.get("item"):
-                    new_value = self.data_value.get("item").get("value")
-                    if new_value:
-                        target_component.data["item"]["value"] = new_value
-                    else:
-                        print("Missing 'value' in data_value for update_value operation.")
-                        return
-                else:
-                    print("Invalid data_value or missing 'item' for update_value operation.")
-                    return
-            else:
-                print(f"Unsupported operation '{self.operation}' for pair.")
-                return
-
+            return self._execute_pair_operation(target_component, source_value)
         elif target_component.comp_type == "Array_of_pairs":
-            # Operations for `Array_of_pairs`
-            if self.operation == "append":
-                result = Arrays.append_to_array(
-                    user_id=target_component.owner,
-                    component_id=target_component.id,
-                    value=source_value
-                )
-            elif self.operation == "remove_back":
-                result = Arrays.remove_at_index(
-                    user_id=target_component.owner,
-                    component_id=target_component.id,
-                    index=-1
-                )
-            elif self.operation == "remove_front":
-                result = Arrays.remove_at_index(
-                    user_id=target_component.owner,
-                    component_id=target_component.id,
-                    index=0
-                )
-            elif self.operation == "delete_at":
-                index = self.data_value.get("index")
-                result = Arrays.remove_at_index(
-                    user_id=target_component.owner,
-                    component_id=target_component.id,
-                    index=index
-                )
-            elif self.operation == "push_at":
-                index = self.data_value.get("index")
-                pair = self.data_value.get("pair")
-                result = Arrays.insert_at_index(
-                    user_id=target_component.owner,
-                    component_id=target_component.id,
-                    index=index,
-                    value=pair
-                )
-            elif self.operation == "update_pair":
-                index = self.data_value.get("index")
-                pair = self.data_value.get("pair")
-                result = Arrays.update_at_index(
-                    user_id=target_component.owner,
-                    component_id=target_component.id,
-                    index=index,
-                    value=pair
-                )
-            else:
-                print(f"Unsupported operation '{self.operation}' for Array_of_pairs.")
-                return
-
-            if not result["success"]:
-                print(f"Array_of_pairs operation failed: {result['message']}")
-                return
-
-        elif target_component.comp_type in ["Array_type", "Array_generic"]:
-            # Operations for generic arrays
-            if self.operation == "append":
-                result = Arrays.append_to_array(
-                    user_id=target_component.owner,
-                    component_id=target_component.id,
-                    value=source_value
-                )
-            elif self.operation == "remove_back":
-                result = Arrays.remove_at_index(
-                    user_id=target_component.owner,
-                    component_id=target_component.id,
-                    index=-1
-                )
-            elif self.operation == "remove_front":
-                result = Arrays.remove_at_index(
-                    user_id=target_component.owner,
-                    component_id=target_component.id,
-                    index=0
-                )
-            elif self.operation == "delete_at":
-                index = self.data_value.get("index")
-                result = Arrays.remove_at_index(
-                    user_id=target_component.owner,
-                    component_id=target_component.id,
-                    index=index
-                )
-            elif self.operation == "push_at":
-                index = self.data_value.get("index")
-                value = self.data_value.get("value")
-                result = Arrays.insert_at_index(
-                    user_id=target_component.owner,
-                    component_id=target_component.id,
-                    index=index,
-                    value=value
-                )
-            else:
-                print(f"Unsupported operation '{self.operation}' for array.")
-                return
-
-            if not result["success"]:
-                print(f"Array operation failed: {result['message']}")
-                return
-
+            return self._execute_array_of_pairs_operation(target_component, source_value)
+        elif target_component.comp_type in ["Array_type", "Array_generic", "Array_of_strings", 
+                                        "Array_of_booleans", "Array_of_dates", "Array_of_objects"]:
+            return self._execute_array_operation(target_component, source_value)
         else:
-            # Handle non-array operations
-            if self.operation == "replace":
-                target_component.data["item"] = source_value
-            elif self.operation == "add" and isinstance(source_value, (int, float)) and isinstance(target_component.data, (int, float)):
-                target_component.data["item"]+= source_value
-            elif self.operation == "multiply" and isinstance(source_value, (int, float)) and isinstance(target_component.data, (int, float)):
-                target_component.data ["item"]*= source_value
-            elif self.operation == "toggle" and isinstance(target_component.data, bool):
-                target_component.data ["item"]= not target_component.data
-            else:
-                print(f"Unsupported operation '{self.operation}' for non-array component.")
-                return
+            return self._execute_scalar_operation(target_component, source_value)
 
+    def _execute_pair_operation(self, target_component, source_value):
+        """Handle operations specific to pair component type"""
+        # Validate pair structure
+        if not isinstance(target_component.data["item"], dict) or \
+        "key" not in target_component.data["item"] or \
+        "value" not in target_component.data["item"]:
+            print("Invalid target component data structure for 'pair'. Expected {'item': {'key': key, 'value': value}}.")
+            return
+
+        if self.operation == "update_key":
+            # Check if data_value has the right structure
+            if not hasattr(self, 'data_value') or not isinstance(self.data_value, dict) or \
+            "item" not in self.data_value or not isinstance(self.data_value["item"], dict) or \
+            "key" not in self.data_value["item"]:
+                print("Invalid data_value structure for 'update_key' operation. Expected {'item': {'key': new_key}}.")
+                return
+            
+            new_key = self.data_value["item"]["key"]
+            # Type check the new key if necessary (e.g., if key should be string)
+            if target_component.data.get("type", {}).get("key") == "str" and not isinstance(new_key, str):
+                print(f"Type mismatch: Expected string for key, got {type(new_key).__name__}.")
+                return
+                
+            target_component.data["item"]["key"] = new_key
+            
+        elif self.operation == "update_value":
+            # Check if data_value has the right structure
+            if not hasattr(self, 'data_value') or not isinstance(self.data_value, dict) or \
+            "item" not in self.data_value or not isinstance(self.data_value["item"], dict) or \
+            "value" not in self.data_value["item"]:
+                print("Invalid data_value structure for 'update_value' operation. Expected {'item': {'value': new_value}}.")
+                return
+                
+            new_value = self.data_value["item"]["value"]
+            # Type check the new value if necessary
+            value_type = target_component.data.get("type", {}).get("value")
+            if value_type and value_type != "any":
+                if value_type == "int" and not isinstance(new_value, int):
+                    print(f"Type mismatch: Expected int for value, got {type(new_value).__name__}.")
+                    return
+                elif value_type == "str" and not isinstance(new_value, str):
+                    print(f"Type mismatch: Expected string for value, got {type(new_value).__name__}.")
+                    return
+                elif value_type == "bool" and not isinstance(new_value, bool):
+                    print(f"Type mismatch: Expected boolean for value, got {type(new_value).__name__}.")
+                    return
+                    
+            target_component.data["item"]["value"] = new_value
+            
+        else:
+            print(f"Unsupported operation '{self.operation}' for pair.")
+            return
+
+        self._mark_as_done(target_component)
+        return True
+
+    def _execute_array_of_pairs_operation(self, target_component, source_value):
+        """Handle operations specific to Array_of_pairs component type"""
+        # Validate array structure
+        if not isinstance(source_value, dict):
+            print("Invalid source value for 'Array_of_pairs'. Expected {'key': key, 'value': value}.")
+            return
+        if not isinstance(target_component.data.get("type"), dict) :
+            print (target_component.data)
+            print("Invalid target component aaaaaaa data structure for 'Array_of_pairs'. Expected {'type': {'key': key_type, 'value': value_type}}.")
+            return
+
+        # Check pair type requirements
+        pair_type = target_component.data.get("type", {})
+        key_type = pair_type.get("key") if isinstance(pair_type, dict) else None
+        value_type = pair_type.get("value") if isinstance(pair_type, dict) else None
+
+        if self.operation == "append":
+            # Validate source_value structure for append operation
+            if not source_value or not isinstance(source_value, dict) or "key" not in source_value or "value" not in source_value:
+                print("Invalid source value for 'append' operation on Array_of_pairs. Expected {'key': key, 'value': value}.")
+                return
+                
+            # Type check the pair if necessary
+            if key_type == "str" and not isinstance(source_value["key"], str):
+                print(f"Type mismatch: Expected string for key, got {type(source_value['key']).__name__}.")
+                return
+            if value_type and value_type != "any":
+                if value_type == "int" and not isinstance(source_value["value"], int):
+                    print(f"Type mismatch: Expected int for value, got {type(source_value['value']).__name__}.")
+                    return
+                elif value_type == "str" and not isinstance(source_value["value"], str):
+                    print(f"Type mismatch: Expected string for value, got {type(source_value['value']).__name__}.")
+                    return
+                elif value_type == "bool" and not isinstance(source_value["value"], bool):
+                    print(f"Type mismatch: Expected boolean for value, got {type(source_value['value']).__name__}.")
+                    return
+
+            result = Arrays.append_to_array(
+                user_id=target_component.owner,
+                component_id=target_component.id,
+                value=source_value
+            )
+            
+        elif self.operation == "remove_back":
+            if not target_component.data["item"]:
+                print("Cannot remove from empty array.")
+                return
+                
+            result = Arrays.remove_at_index(
+                user_id=target_component.owner,
+                component_id=target_component.id,
+                index=-1
+            )
+            
+        elif self.operation == "remove_front":
+            if not target_component.data["item"]:
+                print("Cannot remove from empty array.")
+                return
+                
+            result = Arrays.remove_at_index(
+                user_id=target_component.owner,
+                component_id=target_component.id,
+                index=0
+            )
+            
+        elif self.operation == "delete_at":
+            # Validate index parameter
+            if not hasattr(self, 'data_value') or not isinstance(self.data_value, dict) or "index" not in self.data_value:
+                print("Missing 'index' in data_value for 'delete_at' operation.")
+                return
+                
+            index = self.data_value.get("index")
+            if not isinstance(index, int):
+                print(f"Invalid index type: expected int, got {type(index).__name__}.")
+                return
+                
+            # Check if index is within bounds
+            if index >= len(target_component.data["item"]) or (index < 0 and abs(index) > len(target_component.data["item"])):
+                print(f"Index {index} out of bounds for array of length {len(target_component.data['item'])}.")
+                return
+                
+            result = Arrays.remove_at_index(
+                user_id=target_component.owner,
+                component_id=target_component.id,
+                index=index
+            )
+            
+        elif self.operation == "push_at":
+            # Validate parameters
+            if not hasattr(self, 'data_value') or not isinstance(self.data_value, dict):
+                print("Invalid data_value structure for 'push_at' operation.")
+                return
+                
+            if "index" not in self.data_value:
+                print("Missing 'index' in data_value for 'push_at' operation.")
+                return
+                
+            if "pair" not in self.data_value:
+                print("Missing 'pair' in data_value for 'push_at' operation.")
+                return
+                
+            index = self.data_value.get("index")
+            pair = self.data_value.get("pair")
+            
+            if not isinstance(index, int):
+                print(f"Invalid index type: expected int, got {type(index).__name__}.")
+                return
+                
+            # Check index boundaries (allow insert at end)
+            if index > len(target_component.data["item"]) or (index < 0 and abs(index) > len(target_component.data["item"])):
+                print(f"Index {index} out of bounds for array of length {len(target_component.data['item'])}.")
+                return
+                
+            # Type check the pair
+            if not isinstance(pair, dict) or "key" not in pair or "value" not in pair:
+                print("Invalid pair structure. Expected {'key': key, 'value': value}.")
+                return
+                
+            if key_type == "str" and not isinstance(pair["key"], str):
+                print(f"Type mismatch: Expected string for key, got {type(pair['key']).__name__}.")
+                return
+                
+            if value_type and value_type != "any":
+                if value_type == "int" and not isinstance(pair["value"], int):
+                    print(f"Type mismatch: Expected int for value, got {type(pair['value']).__name__}.")
+                    return
+                elif value_type == "str" and not isinstance(pair["value"], str):
+                    print(f"Type mismatch: Expected string for value, got {type(pair['value']).__name__}.")
+                    return
+                elif value_type == "bool" and not isinstance(pair["value"], bool):
+                    print(f"Type mismatch: Expected boolean for value, got {type(pair['value']).__name__}.")
+                    return
+                    
+            result = Arrays.insert_at_index(
+                user_id=target_component.owner,
+                component_id=target_component.id,
+                index=index,
+                value=pair
+            )
+            
+        elif self.operation == "update_pair":
+            # Validate parameters
+            if not hasattr(self, 'data_value') or not isinstance(self.data_value, dict):
+                print("Invalid data_value structure for 'update_pair' operation.")
+                return
+                
+            if "index" not in self.data_value:
+                print("Missing 'index' in data_value for 'update_pair' operation.")
+                return
+                
+            if "pair" not in self.data_value:
+                print("Missing 'pair' in data_value for 'update_pair' operation.")
+                return
+                
+            index = self.data_value.get("index")
+            pair = self.data_value.get("pair")
+            
+            if not isinstance(index, int):
+                print(f"Invalid index type: expected int, got {type(index).__name__}.")
+                return
+                
+            # Check if index is within bounds
+            if index >= len(target_component.data["item"]) or (index < 0 and abs(index) > len(target_component.data["item"])):
+                print(f"Index {index} out of bounds for array of length {len(target_component.data['item'])}.")
+                return
+                
+            # Type check the pair
+            if not isinstance(pair, dict) or "key" not in pair or "value" not in pair:
+                print("Invalid pair structure. Expected {'key': key, 'value': value}.")
+                return
+                
+            if key_type == "str" and not isinstance(pair["key"], str):
+                print(f"Type mismatch: Expected string for key, got {type(pair['key']).__name__}.")
+                return
+                
+            if value_type and value_type != "any":
+                if value_type == "int" and not isinstance(pair["value"], int):
+                    print(f"Type mismatch: Expected int for value, got {type(pair['value']).__name__}.")
+                    return
+                elif value_type == "str" and not isinstance(pair["value"], str):
+                    print(f"Type mismatch: Expected string for value, got {type(pair['value']).__name__}.")
+                    return
+                elif value_type == "bool" and not isinstance(pair["value"], bool):
+                    print(f"Type mismatch: Expected boolean for value, got {type(pair['value']).__name__}.")
+                    return
+                    
+            result = Arrays.update_at_index(
+                user_id=target_component.owner,
+                component_id=target_component.id,
+                index=index,
+                value=pair
+            )
+            
+        else:
+            print(f"Unsupported operation '{self.operation}' for Array_of_pairs.")
+            return
+
+        if not result["success"]:
+            print(f"Array_of_pairs operation failed: {result['message']}")
+            return
+
+        self._mark_as_done(target_component)
+        return True
+
+    def _execute_array_operation(self, target_component, source_value):
+        """Handle operations specific to array component types"""
+        # Validate array structure
+        if not isinstance(target_component.data["item"], list):
+            print(f"Invalid target component data structure for '{target_component.comp_type}'. Expected {'item': [values]}.")
+            return
+
+        # Check array element type requirement
+        array_type = target_component.data.get("type")
+        
+        if self.operation == "append":
+            # Type check the value based on array type
+            if array_type and array_type != "any":
+                if array_type == "int" and not isinstance(source_value, int):
+                    print(f"Type mismatch: Expected int, got {type(source_value).__name__}.")
+                    return
+                elif array_type == "str" and not isinstance(source_value, str):
+                    print(f"Type mismatch: Expected string, got {type(source_value).__name__}.")
+                    return
+                elif array_type == "bool" and not isinstance(source_value, bool):
+                    print(f"Type mismatch: Expected boolean, got {type(source_value).__name__}.")
+                    return
+                elif array_type == "date" and not isinstance(source_value, str):
+                    # Basic ISO date format check
+                    try:
+                        datetime.datetime.fromisoformat(source_value)
+                    except (ValueError, TypeError):
+                        print(f"Type mismatch: Expected ISO date string, got invalid format: {source_value}.")
+                        return
+                elif array_type == "object" and not isinstance(source_value, dict):
+                    print(f"Type mismatch: Expected object (dict), got {type(source_value).__name__}.")
+                    return
+                    
+            result = Arrays.append_to_array(
+                user_id=target_component.owner,
+                component_id=target_component.id,
+                value=source_value
+            )
+            
+        elif self.operation == "remove_back":
+            if not target_component.data["item"]:
+                print("Cannot remove from empty array.")
+                return
+                
+            result = Arrays.remove_at_index(
+                user_id=target_component.owner,
+                component_id=target_component.id,
+                index=-1
+            )
+            
+        elif self.operation == "remove_front":
+            if not target_component.data["item"]:
+                print("Cannot remove from empty array.")
+                return
+                
+            result = Arrays.remove_at_index(
+                user_id=target_component.owner,
+                component_id=target_component.id,
+                index=0
+            )
+            
+        elif self.operation == "delete_at":
+            # Validate index parameter
+            if not hasattr(self, 'data_value') or not isinstance(self.data_value, dict) or "index" not in self.data_value:
+                print("Missing 'index' in data_value for 'delete_at' operation.")
+                return
+                
+            index = self.data_value.get("index")
+            if not isinstance(index, int):
+                print(f"Invalid index type: expected int, got {type(index).__name__}.")
+                return
+                
+            # Check if index is within bounds
+            if index >= len(target_component.data["item"]) or (index < 0 and abs(index) > len(target_component.data["item"])):
+                print(f"Index {index} out of bounds for array of length {len(target_component.data['item'])}.")
+                return
+                
+            result = Arrays.remove_at_index(
+                user_id=target_component.owner,
+                component_id=target_component.id,
+                index=index
+            )
+            
+        elif self.operation == "push_at":
+            # Validate parameters
+            if not hasattr(self, 'data_value') or not isinstance(self.data_value, dict):
+                print("Invalid data_value structure for 'push_at' operation.")
+                return
+                
+            if "index" not in self.data_value:
+                print("Missing 'index' in data_value for 'push_at' operation.")
+                return
+                
+            if "value" not in self.data_value:
+                print("Missing 'value' in data_value for 'push_at' operation.")
+                return
+                
+            index = self.data_value.get("index")
+            value = self.data_value.get("value")
+            
+            if not isinstance(index, int):
+                print(f"Invalid index type: expected int, got {type(index).__name__}.")
+                return
+                
+            # Check index boundaries (allow insert at end)
+            if index > len(target_component.data["item"]) or (index < 0 and abs(index) > len(target_component.data["item"])):
+                print(f"Index {index} out of bounds for array of length {len(target_component.data['item'])}.")
+                return
+                
+            # Type check the value based on array type
+            if array_type and array_type != "any":
+                if array_type == "int" and not isinstance(value, int):
+                    print(f"Type mismatch: Expected int, got {type(value).__name__}.")
+                    return
+                elif array_type == "str" and not isinstance(value, str):
+                    print(f"Type mismatch: Expected string, got {type(value).__name__}.")
+                    return
+                elif array_type == "bool" and not isinstance(value, bool):
+                    print(f"Type mismatch: Expected boolean, got {type(value).__name__}.")
+                    return
+                elif array_type == "date" and not isinstance(value, str):
+                    # Basic ISO date format check
+                    try:
+                        datetime.datetime.fromisoformat(value)
+                    except (ValueError, TypeError):
+                        print(f"Type mismatch: Expected ISO date string, got invalid format: {value}.")
+                        return
+                elif array_type == "object" and not isinstance(value, dict):
+                    print(f"Type mismatch: Expected object (dict), got {type(value).__name__}.")
+                    return
+                    
+            result = Arrays.insert_at_index(
+                user_id=target_component.owner,
+                component_id=target_component.id,
+                index=index,
+                value=value
+            )
+            
+        else:
+            print(f"Unsupported operation '{self.operation}' for {target_component.comp_type}.")
+            return
+
+        if not result["success"]:
+            print(f"Array operation failed: {result['message']}")
+            return
+
+        self._mark_as_done(target_component)
+        return True
+
+    def _execute_scalar_operation(self, target_component, source_value):
+        """Handle operations specific to scalar component types (int, str, bool, date)"""
+        # Validate operation type
+        if self.operation not in ["replace", "add", "multiply", "toggle"]:
+            print(f"Unsupported operation '{self.operation}' for {target_component.comp_type}.")
+            return
+
+        # Handle operations based on type
+        if self.operation == "replace":
+            # Type check the new value based on component type
+            if target_component.comp_type == "int" and not isinstance(source_value, int):
+                print(f"Type mismatch: Expected int for '{target_component.comp_type}', got {type(source_value).__name__}.")
+                return
+            elif target_component.comp_type == "str" and not isinstance(source_value, str):
+                print(f"Type mismatch: Expected string for '{target_component.comp_type}', got {type(source_value).__name__}.")
+                return
+            elif target_component.comp_type == "bool" and not isinstance(source_value, bool):
+                print(f"Type mismatch: Expected boolean for '{target_component.comp_type}', got {type(source_value).__name__}.")
+                return
+            elif target_component.comp_type == "date" and not isinstance(source_value, str):
+                # Basic ISO date format check
+                try:
+                    datetime.datetime.fromisoformat(source_value)
+                except (ValueError, TypeError):
+                    print(f"Type mismatch: Expected ISO date string for '{target_component.comp_type}', got invalid format: {source_value}.")
+                    return
+                    
+            target_component.data["item"] = source_value
+            
+        elif self.operation == "add":
+            # Check if operation makes sense for the type
+            if not isinstance(target_component.data["item"], (int, float)):
+                print(f"Cannot perform 'add' operation on non-numeric type: {type(target_component.data['item']).__name__}.")
+                return
+                
+            if not isinstance(source_value, (int, float)):
+                print(f"Cannot add non-numeric value: {type(source_value).__name__}.")
+                return
+                
+            target_component.data["item"] += source_value
+            
+        elif self.operation == "multiply":
+            # Check if operation makes sense for the type
+            if not isinstance(target_component.data["item"], (int, float)):
+                print(f"Cannot perform 'multiply' operation on non-numeric type: {type(target_component.data['item']).__name__}.")
+                return
+                
+            if not isinstance(source_value, (int, float)):
+                print(f"Cannot multiply by non-numeric value: {type(source_value).__name__}.")
+                return
+                
+            target_component.data["item"] *= source_value
+            
+        elif self.operation == "toggle":
+            # Check if operation makes sense for the type
+            if not isinstance(target_component.data["item"], bool):
+                print(f"Cannot perform 'toggle' operation on non-boolean type: {type(target_component.data['item']).__name__}.")
+                return
+                
+            target_component.data["item"] = not target_component.data["item"]
+            
+        else:
+            print(f"Unsupported operation '{self.operation}' for {target_component.comp_type}.")
+            return
+
+        self._mark_as_done(target_component)
+        return True
+
+    def _mark_as_done(self, target_component):
+        """Mark operation as completed and save changes"""
         self.details = {**(self.details or {}), "done": True}
         target_component.save()
         self.save_to_db()
         print(f"Data transfer executed: {self.operation} on {target_component.id}")
-        return True
 
     def to_json(self):
         return {
