@@ -29,10 +29,10 @@ async def create_data_transfer(data: dict, user_device: tuple = Depends(verify_d
             raise HTTPException(
                 status_code=404, detail="Target component not found")
         # spearate the if statements to avoid the error of accessing the owner attribute of None
-        if source_component and current_user.id != source_component.owner:
+        if source_component != None and current_user.id != source_component.owner:
             raise HTTPException(
                 status_code=403, detail="Not authorized to create this data transfer")
-        if (current_user.id != target_component.owner) or not current_user.admin:
+        if (current_user.id != target_component.owner) and not current_user.admin:
             raise HTTPException(
                 status_code=403, detail="Not authorized to create this data transfer")
 
@@ -52,14 +52,17 @@ async def create_data_transfer(data: dict, user_device: tuple = Depends(verify_d
             data_value=data.get("data_value"),
             operation=data.get("operation"),
             schedule_time=schedule_time,
-            details=data.get("details"),
+            details=data.get("details") or {},
             owner = current_user.id
         )
 
         if schedule_time and datetime.now(timezone.utc) >= schedule_time:
             if data_transfer.execute():
-                data_transfer.details["done"] = True
-                data_transfer.save_to_db()
+                return {"message": "Data transfer executed immediately", "id": str(data_transfer.id)}
+            raise HTTPException(
+                status_code=500, detail="Failed to execute data transfer")
+        if not schedule_time:
+            if data_transfer.execute():
                 return {"message": "Data transfer executed immediately", "id": str(data_transfer.id)}
             raise HTTPException(
                 status_code=500, detail="Failed to execute data transfer")

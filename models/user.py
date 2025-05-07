@@ -18,7 +18,7 @@ class User(Document):
     lastname = StringField(required=True)
     phone_number = StringField(required=True)
     birthday = DateTimeField(required=True)
-    default_subjects = ListField(DictField())
+    default_subjects = DictField(default={})
 
     meta = {'collection': 'users'}
 
