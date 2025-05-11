@@ -81,13 +81,13 @@ DEFAULT_USER_TEMPLATES = {
             {
                 "name": "Income",
                 "type": "Array_of_pairs",
-                "data": {"type": {"key": "str", "value": "int"}},  # Specify the key and value types
+                "data": {"type": {"key": "str", "value": "str"}},  # Specify the key and value types
                 "is_deletable": False
             },
             {
                 "name": "Expenses",
                 "type": "Array_of_pairs",
-                "data": {"type": {"key": "str", "value": "int"}},  # Specify the key and value types
+                "data": {"type": {"key": "str", "value": "str"}},  # Specify the key and value types
                 "is_deletable": False
             },
             {
