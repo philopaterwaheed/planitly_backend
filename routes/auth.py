@@ -12,6 +12,7 @@ from errors import revert_firebase_user, UserLogutError
 from fire import node_firebase
 from errors import FirebaseAuthError
 import user_agents
+from firebase_admin import auth
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
@@ -439,3 +440,43 @@ async def reset_password(user_data: dict):
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"An unexpected error occurred: {str(e)}")
+
+
+@router.post("/change-password", status_code=status.HTTP_200_OK)
+async def change_password(user_data: dict, user_device: tuple = Depends(verify_device)):
+    """
+    Change the password for the authenticated user.
+    """
+    current_user = user_device[0]
+    try:
+        old_password = user_data.get("oldPassword")
+        new_password = user_data.get("newPassword")
+
+        if not old_password or not new_password:
+            raise HTTPException(status_code=400, detail="Old and new passwords are required.")
+
+        # Validate new password strength
+        if not re.match(r"^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*[@$!%*?&^#_+=<>.,;:|\\/-])[A-Za-z\d@$!%*?&^#_+=<>.,;:|\\/-]{8,}$", new_password):
+            raise HTTPException(
+                status_code=400, detail="Weak password. Must contain uppercase, lowercase, number, special character, and be at least 8 characters long."
+            )
+
+        # Verify old password
+        user, error_message = await authenticate_user(current_user.email, old_password, None)
+        if not user:
+            raise HTTPException(status_code=401, detail="Old password is incorrect.")
+        try:
+            auth.update_user(current_user.firebase_uid, password=new_password)
+            response = type("obj", (object,), {"status_code": 200})()  # Mock response for compatibility
+        except auth.AuthError as e:
+            raise HTTPException(status_code=400, detail=f"Firebase error: {str(e)}")
+        if response.status_code != 200:
+            raise HTTPException(status_code=400, detail="Failed to change password.")
+
+        return {"detail": "Password changed successfully."}
+    except HTTPException as he:
+        raise he
+    except FirebaseAuthError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.message)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
