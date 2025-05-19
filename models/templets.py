@@ -1,4 +1,6 @@
 import datetime
+from mongoengine import Document, StringField, DictField, ReferenceField
+
 # Templates are predefined subjects that can be used to create new subjects
 DEFAULT_USER_TEMPLATES = {
     "profile": {
@@ -147,3 +149,15 @@ TEMPLATES = {
         ],
     },
 }
+
+class CustomTemplate_db(Document):
+    owner = ReferenceField('User', required=True)
+    name = StringField(required=True)
+    description = StringField()
+    data = DictField(required=True)  # Should contain components/widgets structure
+
+    meta = {
+        'indexes': [
+            {'fields': ['owner', 'name'], 'unique': True}
+        ]
+    }
