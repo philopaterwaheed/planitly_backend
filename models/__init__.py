@@ -15,6 +15,7 @@ from .devices import Device_db
 from .arrayItem import ArrayItem_db, Arrays
 from mongoengine import connect
 from consts import env_variables
+from .templets import  CustomTemplate_db
 
 # TODO - compine the classes with the db classes
 

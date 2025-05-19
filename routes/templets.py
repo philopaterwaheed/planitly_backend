@@ -1,11 +1,11 @@
 from fastapi import APIRouter, HTTPException, status, Depends
-from models.templets import CustomTemplate
+from models.templets import CustomTemplate_db
 from models.component import PREDEFINED_COMPONENT_TYPES
 from models.widget import Widget
 from middleWares import verify_device
 from mongoengine.errors import NotUniqueError, ValidationError
 
-router = APIRouter(prefix="/custom-templates", tags=["CustomTemplates"])
+router = APIRouter(prefix="/custom-templates", tags=["templates"])
 
 def validate_component_data(comp_type, data):
     """Validate component data against its type."""
@@ -100,7 +100,7 @@ async def create_custom_template(data: dict, user_device: tuple = Depends(verify
     validate_template_structure(template_data)
 
     try:
-        template = CustomTemplate(
+        template = CustomTemplate_db(
             owner=current_user.id,
             name=name,
             description=description,
@@ -116,13 +116,13 @@ async def create_custom_template(data: dict, user_device: tuple = Depends(verify
 @router.get("/", status_code=status.HTTP_200_OK)
 async def list_custom_templates(user_device: tuple = Depends(verify_device)):
     current_user = user_device[0]
-    templates = CustomTemplate.objects(owner=current_user.id)
+    templates = CustomTemplate_db.objects(owner=current_user.id)
     return [tpl.to_mongo().to_dict() for tpl in templates]
 
 @router.put("/{template_id}", status_code=status.HTTP_200_OK)
 async def update_custom_template(template_id: str, data: dict, user_device: tuple = Depends(verify_device)):
     current_user = user_device[0]
-    template = CustomTemplate.objects(id=template_id, owner=current_user.id).first()
+    template = CustomTemplate_db.objects(id=template_id, owner=current_user.id).first()
     if not template:
         raise HTTPException(status_code=404, detail="Template not found.")
 
@@ -145,7 +145,7 @@ async def update_custom_template(template_id: str, data: dict, user_device: tupl
 @router.delete("/{template_id}", status_code=status.HTTP_200_OK)
 async def delete_custom_template(template_id: str, user_device: tuple = Depends(verify_device)):
     current_user = user_device[0]
-    template = CustomTemplate.objects(id=template_id, owner=current_user.id).first()
+    template = CustomTemplate_db.objects(id=template_id, owner=current_user.id).first()
     if not template:
         raise HTTPException(status_code=404, detail="Template not found.")
     template.delete()

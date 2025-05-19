@@ -3,22 +3,28 @@ from models import Subject_db
 from middleWares import verify_device, admin_required
 from models import Widget_db, Component, Subject, Category_db
 from mongoengine.queryset.visitor import Q
-from mongoengine.errors import DoesNotExist, ValidationError
+from mongoengine.errors import DoesNotExist, ValidationError , NotUniqueError
 
 router = APIRouter(prefix="/subjects", tags=["Subjects"])
-
 
 @router.post("/", dependencies=[Depends(verify_device)], status_code=status.HTTP_201_CREATED)
 async def create_subject(data: dict, user_device: tuple = Depends(verify_device)):
     """Create a new subject with an optional category."""
     current_user = user_device[0]
     try:
-        sub_id = data.get("id") or 0
         sub_name = data.get("name") or None
         sub_tem = data.get("template") or None
         category_name = data.get("category") or None
         if not sub_name:
             raise HTTPException(status_code=400, detail="Subject name is required.")
+
+        # Check for uniqueness of subject name for this user
+        existing_subject = Subject_db.objects(name=sub_name, owner=current_user.id).first()
+        if existing_subject:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Subject with name '{sub_name}' already exists for this user."
+            )
 
         # Validate the category name
         if category_name:
@@ -30,7 +36,7 @@ async def create_subject(data: dict, user_device: tuple = Depends(verify_device)
             name=sub_name,
             owner=current_user.id,
             template=sub_tem,
-            category=category_name,  # Store category name
+            category=category_name, 
         )
         if sub_tem:
             await subject.apply_template(sub_tem)
@@ -53,10 +59,10 @@ async def get_subject(subject_id: str):
 
 
 # get all subjects route
-@router.get("/", dependencies=[Depends(verify_device), Depends(admin_required)], status_code=status.HTTP_200_OK)
+@router.get("/all", dependencies=[Depends(verify_device), Depends(admin_required)], status_code=status.HTTP_200_OK)
 async def get_all_subjects():
+    """Retrieve all subjects (Admin Only)."""
     try:
-        """Retrieve all subjects (Admin Only)."""
         subjects = Subject_db.objects()
         return [subj.to_mongo() for subj in subjects]
     except Exception as e:
@@ -64,9 +70,8 @@ async def get_all_subjects():
             status_code=500, detail=f"An unexpected error occurred: {str(e)}")
 
 
+
 # get by User_id subjects route
-
-
 @router.get("/user/{user_id}", status_code=status.HTTP_200_OK)
 async def get_user_subjects(user_id: str, user_device: tuple =Depends(verify_device)):
     current_user = user_device[0]
@@ -81,6 +86,28 @@ async def get_user_subjects(user_id: str, user_device: tuple =Depends(verify_dev
         raise HTTPException(
             status_code=500, detail=f"An unexpected error occurred: {str(e)}")
 
+# get current user's subjects route with pagination and max limit
+@router.get("/", status_code=status.HTTP_200_OK)
+async def get_my_subjects(
+    user_device: tuple = Depends(verify_device),
+    skip: int = 0,
+    limit: int = 40
+):
+    MAX_LIMIT = 40
+    current_user = user_device[0]
+    try:
+        if limit > MAX_LIMIT:
+            limit = MAX_LIMIT
+        query = Subject_db.objects(owner=current_user.id)
+        total = query.count()
+        subjects = query.skip(skip).limit(limit)
+        return {
+            "total": total,
+            "subjects": [subj.to_mongo() for subj in subjects]
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"An unexpected error occurred: {str(e)}")
 
 @router.put("/{subject_id}", status_code=status.HTTP_200_OK)
 async def update_subject(subject_id: str, data: dict, user_device: tuple =Depends(verify_device)):

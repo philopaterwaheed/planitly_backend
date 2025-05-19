@@ -19,7 +19,12 @@ class Subject_db(Document):
     is_deletable = BooleanField(default=True)
     category = StringField(required=False)  # Store category name as a string
 
-    meta = {'collection': 'subjects'}
+    meta = {
+        'collection': 'subjects',
+        'indexes': [
+            {'fields': ['name', 'owner'], 'unique': True}
+        ]
+    }
 
 
 # Subject class helper to interact with the database
@@ -157,7 +162,7 @@ class Subject:
             components=self.components,
             widgets=self.widgets,
             is_deletable=self.is_deletable,
-            category=self.category,  # Save category name
+            category=self.category,
         )
         subject_db.save()
 
