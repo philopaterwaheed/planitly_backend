@@ -113,6 +113,7 @@ class Component:
     @staticmethod
     def load_from_db(comp_id):
         component_db = Component_db.objects(id=str(comp_id)).first()
+        print (component_db)
         if component_db:
             print ("returning")
             return Component.from_json({
