@@ -9,6 +9,7 @@ from models import User, Component, Subject, Subject_db, DataTransfer, DataTrans
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from routes import subjects, components, auth, dataTransfers, connection, widget, notifications , profile, categories , templets
+from routes.settings import router as settings_router
 import os
 import logging
 from mongoengine import connect, disconnect
@@ -203,6 +204,7 @@ app.include_router(notifications.router)
 app.include_router(profile.router)
 app.include_router(categories.router)
 app.include_router(templets.router)
+app.include_router(settings_router)
 
 if __name__ == "__main__":
     run_server()

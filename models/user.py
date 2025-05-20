@@ -19,6 +19,7 @@ class User(Document):
     phone_number = StringField(required=True)
     birthday = DateTimeField(required=True)
     default_subjects = DictField(default={})
+    settings = DictField(default=lambda: {"ai_accessible": []})
 
     meta = {'collection': 'users'}
 
