@@ -164,17 +164,23 @@ async def authenticate_user(username_or_email: str, password: str, device_id=Non
 
     # Add device if request is provided
     if device_id:
-        if not user.devices or device_id not in user.devices:
+        print(user.devices)
+        if not hasattr(user, 'devices') or user.devices is None:
+            print("No devices found, creating a new list")
+            user.devices = []
+        if device_id not in user.devices:
             # Check if device limit reached
             if len(user.devices) >= 5:
                 return None, "Maximum devices reached for this account"
-
             user.devices.append(device_id)
         else:
             # Device already exists, no need to add
             # log out it becuase maybe there is fron error
             await logout_user(current_user=user, device_id=device_id)
             return None, "Device already logged in"
+    else :
+        return None, "Device could not be added, please try again"
+
 
     user.save()
     return user, None

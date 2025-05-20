@@ -182,10 +182,6 @@ async def register(user_data: dict, request: Request):
                 birthday=birthday_date if birthday else None,
             )
 
-            # Add the current device
-            device_id = get_device_identifier(request)
-            user.devices = [device_id]  # First device
-
             user.save()
 
             # Create default subjects for the new user
@@ -226,7 +222,6 @@ async def login_user(user_data: dict, request: Request):
         device_name = f"{agent_info.device.family} {agent_info.os.family} {agent_info.os.version_string}"
         client_ip = request.client.host
 
-
         # Authenticate the user
         user, error_message = await authenticate_user(username_or_email, password, device_id)
         if not user:
@@ -251,7 +246,7 @@ async def login_user(user_data: dict, request: Request):
                 "city": response.get("city", "Unknown"),
                 "region": response.get("region", "Unknown"),
             }
-        except Exception as e:
+        except Exception:
             location = {
                 "country": "Unknown",
                 "city": "Unknown",
@@ -287,6 +282,7 @@ async def login_user(user_data: dict, request: Request):
         raise he
     except Exception as e:
         raise HTTPException(detail=str(e), status_code=500)
+
 
 
 @router.post("/logout-device", status_code=status.HTTP_200_OK)
