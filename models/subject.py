@@ -2,10 +2,11 @@ from .component import Component_db, Component, PREDEFINED_COMPONENT_TYPES
 from .widget import Widget_db, Widget
 from .category import Category_db
 import uuid
-from mongoengine import Document, StringField, DictField, ReferenceField, ListField, BooleanField, NULLIFY
+from mongoengine import Document, StringField, DictField, ReferenceField, ListField, BooleanField, NULLIFY, DateTimeField
 from mongoengine.errors import DoesNotExist, ValidationError
 from .templets import TEMPLATES
 from .arrayItem import Arrays
+import datetime
 
 
 # use the Subject_db class to interact with the database directly without the helper
@@ -18,6 +19,7 @@ class Subject_db(Document):
     template = StringField(required=False)
     is_deletable = BooleanField(default=True)
     category = StringField(required=False)  # Store category name as a string
+    created_at = DateTimeField(default=datetime.datetime.utcnow)  # <-- Add this line
 
     meta = {
         'collection': 'subjects',
@@ -29,7 +31,7 @@ class Subject_db(Document):
 
 # Subject class helper to interact with the database
 class Subject:
-    def __init__(self, name, owner, template="", components=None, widgets=None, id=None, is_deletable=True, category=None):
+    def __init__(self, name, owner, template="", components=None, widgets=None, id=None, is_deletable=True, category=None, created_at=None):
         self.id = id or str(uuid.uuid4())
         self.name = name
         self.owner = owner
@@ -38,6 +40,7 @@ class Subject:
         self.widgets = widgets or []
         self.is_deletable = is_deletable
         self.category = category or "Uncategorized"  # Default to "Uncategorized"
+        self.created_at = created_at or datetime.datetime.utcnow()  # <-- Add this line
 
     async def add_component(self, component_name, component_type, data=None, is_deletable=True):
         if component_type in PREDEFINED_COMPONENT_TYPES:
@@ -112,6 +115,7 @@ class Subject:
             "widgets": self.widgets,
             "is_deletable": self.is_deletable,
             "owner": self.owner,
+            "created_at": self.created_at.isoformat() if self.created_at else None,  # <-- Add this line
         }
 
     async def apply_template(self, template):
@@ -145,7 +149,9 @@ class Subject:
                           template=data["template"],
                           id=data["id"],
                           is_deletable=data.get("is_deletable", True),
-                          category=data.get("category", "Uncategorized")) 
+                          category=data.get("category", "Uncategorized"),
+                          created_at=data.get("created_at"),  # <-- Add this line
+                          ) 
         for comp_id in data["components"]:
             subject.components.append(comp_id)
         for widget_id in data.get("widgets", []):
@@ -163,6 +169,7 @@ class Subject:
             widgets=self.widgets,
             is_deletable=self.is_deletable,
             category=self.category,
+            created_at=self.created_at,  # <-- Add this line
         )
         subject_db.save()
 
@@ -180,7 +187,8 @@ class Subject:
                         component.id for component in subject_db.components],
                     widgets=[widget.id for widget in subject_db.widgets],
                     is_deletable=subject_db.is_deletable,
-                    category=subject_db.category  
+                    category=subject_db.category,
+                    created_at=subject_db.created_at,  # <-- Add this line
                 )
                 return subject
             else:

@@ -78,7 +78,7 @@ async def get_user_subjects(user_id: str, user_device: tuple =Depends(verify_dev
     try:
         """Retrieve subjects for a specific user."""
         if str(current_user.id) == user_id or current_user.admin:
-            subjects = Subject_db.objects(owner=user_id)
+            subjects = Subject_db.objects(owner=user_id).order_by('-created_at') 
             return [subj.to_mongo() for subj in subjects]
         raise HTTPException(
             status_code=403, detail="Not authorized to access these subjects")
@@ -98,7 +98,7 @@ async def get_my_subjects(
     try:
         if limit > MAX_LIMIT:
             limit = MAX_LIMIT
-        query = Subject_db.objects(owner=current_user.id)
+        query = Subject_db.objects(owner=current_user.id).order_by('-created_at')
         total = query.count()
         subjects = query.skip(skip).limit(limit)
         return {
