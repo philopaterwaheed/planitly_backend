@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from models import Subject_db
 from middleWares import verify_device, admin_required
-from models import Widget_db, Component, Subject, Category_db
+from models import  Subject, Category_db
 from mongoengine.queryset.visitor import Q
 from mongoengine.errors import DoesNotExist, ValidationError , NotUniqueError
 
@@ -229,48 +229,20 @@ async def get_subject_full_data(subject_id: str, user_device: tuple = Depends(ve
     current_user = user_device[0]
     try:
         # Fetch the subject
-        subject = Subject_db.objects.get(id=subject_id)
-        if not subject:
+        subject_db = Subject_db.objects.get(id=subject_id)
+        if not subject_db:
             raise HTTPException(status_code=404, detail="Subject not found")
 
         # Check if the user is authorized to access the subject
-        if str(current_user.id) != str(subject.owner) and not current_user.admin:
+        if str(current_user.id) != str(subject_db.owner) and not current_user.admin:
             raise HTTPException(
                 status_code=403, detail="Not authorized to access this subject"
             )
 
-        # Fetch components
-        components = []
-        try:
-            components = [
-                Component.load_from_db(component.id).get_component()
-                for component in (subject.components or [])
-            ]
-        except Exception as e:
-            raise HTTPException(
-                status_code=500, detail=f"Error loading components: {str(e)}"
-            )
-
-        # Fetch widgets
-        widgets = []
-        try:
-            widgets = [
-                widget.to_mongo().to_dict()
-                for widget in Widget_db.objects(host_subject=subject.id)
-            ]
-        except Exception as e:
-            raise HTTPException(
-                status_code=500, detail=f"Error loading widgets: {str(e)}"
-            )
-
-        # Combine subject, components, and widgets data
-        full_data = {
-            "subject": subject.to_mongo().to_dict(),
-            "components": components,
-            "widgets": widgets,
-        }
-
+        subject = Subject.from_db(subject_db)
+        full_data = await subject.get_full_data()
         return full_data
+
     except DoesNotExist:
         raise HTTPException(status_code=404, detail="Subject not found")
     except Exception as e:

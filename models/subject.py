@@ -142,6 +142,33 @@ class Subject:
                     widget.get("is_deletable", True),
                 )
 
+    async def get_full_data(self):
+        """Fetch all data inside the subject, including its components and widgets."""
+        # Fetch components
+        try:
+            components = [
+                Component.load_from_db(component_id).get_component()
+                for component_id in (self.components or [])
+            ]
+        except Exception as e:
+            raise Exception(f"Error loading components: {str(e)}")
+
+        # Fetch widgets
+        try:
+            widgets = [
+                widget.to_mongo().to_dict()
+                for widget in Widget_db.objects(host_subject=self.id)
+            ]
+        except Exception as e:
+            raise Exception(f"Error loading widgets: {str(e)}")
+
+        # Combine subject, components, and widgets data
+        return {
+            "subject": self.to_json(),
+            "components": components,
+            "widgets": widgets,
+        }
+
     @staticmethod
     def from_json(data):
         subject = Subject(name=data["name"],
@@ -197,3 +224,19 @@ class Subject:
         except DoesNotExist:
             print(f"Subject with ID {id} does not exist.")
             return None
+
+    @staticmethod
+    def from_db(subject_db):
+        if not subject_db:
+            return None
+        return Subject(
+            id=subject_db.id,
+            name=subject_db.name,
+            owner=subject_db.owner,
+            template=subject_db.template,
+            components=[component.id for component in subject_db.components],
+            widgets=[widget.id for widget in subject_db.widgets],
+            is_deletable=subject_db.is_deletable,
+            category=subject_db.category,
+            created_at=subject_db.created_at,
+        )
