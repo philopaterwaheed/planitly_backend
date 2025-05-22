@@ -110,12 +110,19 @@ async def get_my_subjects(
             status_code=500, detail=f"An unexpected error occurred: {str(e)}")
 
 @router.put("/{subject_id}", status_code=status.HTTP_200_OK)
-async def update_subject(subject_id: str, data: dict, user_device: tuple =Depends(verify_device)):
-    """Update a subject by its ID."""
+async def update_subject(subject_id: str, data: dict, user_device: tuple = Depends(verify_device)):
+    """Update a subject by its ID. Prevent editing reference arrays (widgets, components)."""
     current_user = user_device[0]
     try:
         subject = Subject_db.objects.get(id=subject_id)
         if str(current_user.id) == str(subject.owner) or current_user.admin:
+            # Prevent editing reference arrays
+            for forbidden_field in ["widgets", "components" , "owner" , "template" , "is_deletable" ,  "created_at"  ]:
+                if forbidden_field in data:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Editing '{forbidden_field}' is not allowed via this endpoint."
+                    )
             subject.update(**data)
             return {"message": f"Subject with ID {subject_id} updated successfully."}
         raise HTTPException(

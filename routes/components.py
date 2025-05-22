@@ -136,3 +136,44 @@ async def delete_component(component_id: str, user_device: tuple = Depends(verif
         raise HTTPException(status_code=404, detail="Component or Subject not found")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
+
+
+@router.put("/{component_id}", status_code=status.HTTP_200_OK)
+async def update_component(component_id: str, data: dict, user_device: tuple = Depends(verify_device)):
+    """
+    Update a component's data. Prevent editing reference fields/lists such as host_subject, owner, or id.
+    Only the 'data' and 'name' fields can be updated.
+    """
+    current_user = user_device[0]
+    try:
+        component = Component_db.objects.get(id=component_id)
+        if not component:
+            raise HTTPException(status_code=404, detail="Component not found.")
+
+        # Check ownership
+        if str(current_user.id) != str(component.owner) and not current_user.admin:
+            raise HTTPException(status_code=403, detail="Not authorized to update this component.")
+
+        # Prevent changing reference fields/lists
+        forbidden_fields = {"host_subject", "owner", "id", "is_deletable", "comp_type"}
+        if any(field in data for field in forbidden_fields):
+            raise HTTPException(status_code=400, detail="Cannot update reference fields or lists.")
+
+        # Only allow updating 'data' and 'name'
+        updated = False
+        if "data" in data:
+            component.data = data["data"]
+            updated = True
+        if "name" in data:
+            component.name = data["name"]
+            updated = True
+
+        if not updated:
+            raise HTTPException(status_code=400, detail="No updatable fields provided (only 'data' and 'name' allowed).")
+
+        component.save()
+        return {"message": "Component updated successfully.", "id": component_id}
+    except DoesNotExist:
+        raise HTTPException(status_code=404, detail="Component not found.")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
