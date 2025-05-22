@@ -85,3 +85,36 @@ async def delete_category(category_name: str, user_device: tuple = Depends(verif
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
+
+
+@router.get("/{category_name}/subjects", status_code=status.HTTP_200_OK)
+async def list_subjects_in_category(
+    category_name: str,
+    user_device: tuple = Depends(verify_device),
+    skip: int = 0,
+    limit: int = 40
+):
+    """
+    List subjects within a specific category for the current user, with pagination.
+    """
+    MAX_LIMIT = 40
+    current_user = user_device[0]
+    try:
+        # Ensure the category exists for the user
+        from models.category import Category
+        category = Category.objects(name=category_name, owner=current_user.id).first()
+        if not category:
+            raise HTTPException(status_code=404, detail=f"Category '{category_name}' not found.")
+
+        if limit > MAX_LIMIT:
+            limit = MAX_LIMIT
+
+        query = Subject_db.objects(category=category_name, owner=current_user.id).order_by('-created_at')
+        total = query.count()
+        subjects = query.skip(skip).limit(limit)
+        return {
+            "total": total,
+            "subjects": [subject.to_json() for subject in subjects]
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
