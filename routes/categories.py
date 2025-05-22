@@ -27,15 +27,27 @@ async def create_category(data: dict, user_device: tuple = Depends(verify_device
 
 
 @router.get("/", status_code=status.HTTP_200_OK)
-async def list_categories(user_device: tuple = Depends(verify_device)):
-    """List all categories for the current user."""
+async def list_categories(
+    user_device: tuple = Depends(verify_device),
+    skip: int = 0,
+    limit: int = 40
+):
+    """List all categories for the current user with pagination."""
+    MAX_LIMIT = 40
     current_user = user_device[0]
     try:
-        categories = Category_db.objects(owner=current_user.id)
-        return [category.to_json() for category in categories]
+        if limit > MAX_LIMIT:
+            limit = MAX_LIMIT
+
+        query = Category_db.objects(owner=current_user.id).order_by('-name')
+        total = query.count()
+        categories = query.skip(skip).limit(limit)
+        return {
+            "total": total,
+            "categories": [category.to_json() for category in categories]
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
-
 
 @router.put("/{category_id}", status_code=status.HTTP_200_OK)
 async def update_category(category_id: str, data: dict, user_device: tuple = Depends(verify_device)):
