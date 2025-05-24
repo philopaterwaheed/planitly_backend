@@ -7,3 +7,4 @@ cloudinary.config(
     api_secret=env_variables["CLOUDINARY_API_SECRET"],
 )
 dummy = 5 
+dummy = 6
