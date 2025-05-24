@@ -16,6 +16,7 @@ from .arrayItem import ArrayItem_db, Arrays
 from mongoengine import connect
 from consts import env_variables
 from .templets import  CustomTemplate_db
+from .ai_message import AIMessage_db
 
 # TODO - compine the classes with the db classes
 

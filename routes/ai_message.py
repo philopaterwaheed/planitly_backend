@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, status
 from models import User, Subject_db, Subject, Connection_db, CustomTemplate_db
 from middleWares import verify_device
+from models import AIMessage_db
 
 router = APIRouter(prefix="/chat", tags=["AI Messaging"])
 
@@ -10,7 +11,7 @@ async def message_ai(
     user_device: tuple = Depends(verify_device)
 ):
     """
-    Send a message to the AI, providing AI-accessible subjects (full data), not-done connections, and templates.
+    Send a message to the AI, providing AI-accessible subjects (full data), not-done connections, templates, and user id.
     """
     user = user_device[0]
 
@@ -36,7 +37,25 @@ async def message_ai(
 
     return {
         "message": message,
+        "user_id": str(user.id),
         "ai_accessible_subjects": ai_subjects_full_data,
         "not_done_connections": connections_data,
         "custom_templates": templates_data
     }
+
+@router.get("/messages", status_code=status.HTTP_200_OK)
+async def get_user_messages(user_device: tuple = Depends(verify_device)):
+    """
+    Get all AI messages for the current user.
+    """
+    user = user_device[0]
+    messages = list(AIMessage_db.objects(user_id=str(user.id)).order_by("-created_at"))
+    messages_data = [
+        {
+            "user_message": msg.user_message,
+            "ai_response": msg.ai_response,
+            "created_at": msg.created_at
+        }
+        for msg in messages
+    ]
+    return {"messages": messages_data}
