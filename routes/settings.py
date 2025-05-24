@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from models import User, Subject_db
 from middleWares import verify_device
+from fastapi import Request
 
 router = APIRouter(prefix="/settings", tags=["Settings"])
 
@@ -10,8 +11,11 @@ async def get_ai_accessible_subjects(user_device: tuple = Depends(verify_device)
     return {"ai_accessible": user.settings.get("ai_accessible", [])}
 
 @router.post("/ai-accessible/add", status_code=status.HTTP_200_OK)
-async def add_ai_accessible_subject(subject_id: str, user_device: tuple = Depends(verify_device)):
+async def add_ai_accessible_subject(data:dict, user_device: tuple = Depends(verify_device)):
     user = user_device[0]
+    subject_id = data.get("subject_id")
+    if not subject_id:
+        raise HTTPException(status_code=400, detail="Missing subject_id in request body.")
     ai_list = user.settings.get("ai_accessible", [])
     if subject_id in ai_list:
         raise HTTPException(status_code=400, detail="Subject already in AI-accessible list.")
@@ -27,8 +31,11 @@ async def add_ai_accessible_subject(subject_id: str, user_device: tuple = Depend
     return {"message": "Subject added to AI-accessible list.", "ai_accessible": ai_list}
 
 @router.post("/ai-accessible/remove", status_code=status.HTTP_200_OK)
-async def remove_ai_accessible_subject(subject_id: str, user_device: tuple = Depends(verify_device)):
+async def remove_ai_accessible_subject(data:dict, user_device: tuple = Depends(verify_device)):
     user = user_device[0]
+    subject_id = data.get("subject_id")
+    if not subject_id:
+        raise HTTPException(status_code=400, detail="Missing subject_id in request body.")
     ai_list = user.settings.get("ai_accessible", [])
     if subject_id not in ai_list:
         raise HTTPException(status_code=404, detail="Subject not in AI-accessible list.")
