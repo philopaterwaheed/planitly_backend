@@ -19,7 +19,7 @@ env_variables = {
     'CLOUDINARY_API_SECRET': os.getenv('CLOUDNARY_API_SECRET'),
     'CLOUDINARY_CLOUD_NAME': os.getenv('CLOUDNARY_CLOUD_NAME'),
     'CLOUDINARY_URL': f"https://api.cloudinary.com/v1_1/{os.getenv('CLOUDNARY_CLOUD_NAME')}/image/upload",
-    'DEV': os.getenv('DEV'),
+    'DEV': os.getenv('DEV' ,"false"),
     'FIREBASE_CREDENTIALS_JSON': {
         'type': "service_account",
         'project_id': os.getenv('FIREBASE_PROJECT_ID'),
@@ -31,15 +31,16 @@ env_variables = {
         'token_uri': os.getenv('FIREBASE_TOKEN_URI'),
         'auth_provider_x509_cert_url': os.getenv('FIREBASE_AUTH_PROVIDER_CERT_URL'),
         'client_x509_cert_url': os.getenv('FIREBASE_CLIENT_CERT_URL')
-    }
+    },
+    'AUTH_API_KEY': os.getenv('AUTH_API_KEY', "default_AUTH_api_key"),
 }
 
-if env_variables['DEV']:
-    firebase_base_url = "https://planitly-backend.vercel.app/api/node"
-else:
+if env_variables['DEV'] == "true":
     firebase_base_url = "http://localhost:3000/api/node"
-print(
-    f"Using {'local' if env_variables['DEV'] else 'production'} Firebase URL")
+    print("Using local Firebase URL")
+else:
+    firebase_base_url = "https://planitly-backend.vercel.app/api/node"
+    print("Using production Firebase URL")
 
 firebase_urls = {
     'register': f"{firebase_base_url}/firebase_register",

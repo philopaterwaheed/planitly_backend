@@ -2,12 +2,12 @@ from firebase_admin import credentials
 import firebase_admin
 from consts import env_variables , firebase_urls
 from errors import FirebaseAuthError
-import requests
+import httpx
 cred_dict = env_variables.get(
     "FIREBASE_CREDENTIALS_JSON", None
 )
 cred = credentials.Certificate(cred_dict)
-
+auth_api_key = env_variables['AUTH_API_KEY']
 
 def initialize_firebase(cred):
     """Initialize Firebase Admin SDK from .env file"""
@@ -35,12 +35,13 @@ async def node_firebase(email: str, password: str = None, operation: str = "regi
         if password:
             data["password"] = password
 
+        headers = { 'auth_api_key': auth_api_key }
         # Get the appropriate URL for the operation
         url = firebase_urls[operation]
 
-        # Make the POST request to the Node.js Firebase API
-        response = requests.post(url, json=data)
-
+        # Make the POST request to the index.js Firebase API
+        async with httpx.AsyncClient() as client:
+            response = await client.post(url, json=data, headers=headers)
         # Handle non-successful responses
         if response.status_code not in [200, 201]:
             try:
@@ -56,5 +57,5 @@ async def node_firebase(email: str, password: str = None, operation: str = "regi
         # Return the response data
         return response
 
-    except requests.exceptions.RequestException as e:
+    except httpx.RequestError as e:
         raise FirebaseAuthError(status_code=500, message=f"Error connecting to Firebase service: {str(e)}")

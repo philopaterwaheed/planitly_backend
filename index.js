@@ -12,8 +12,17 @@ import {
 dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3000;
+const AUTH_API_KEY = process.env.AUTH_API_KEY || "default_AUTH_api_key";
 
 app.use(bodyParser.json());
+
+app.use((req, res, next) => {
+    const key = req.headers['auth_api_key'] || req.query.AUTH_API_KEY;
+    if (!key || key !== AUTH_API_KEY) {
+        return res.status(403).json({ error: 'Forbidden: Invalid API key.' });
+    }
+    next();
+});
 
 app.post('/api/node/firebase_register', async (req, res) => {
 	const { email, password } = req.body;

@@ -14,3 +14,4 @@ cloudinary
 ua-parser-builtins
 ua-parser
 user-agents
+httpx
