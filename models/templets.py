@@ -155,6 +155,7 @@ class CustomTemplate_db(Document):
     name = StringField(required=True)
     description = StringField()
     data = DictField(required=True)  # Should contain components/widgets structure
+    category = StringField() 
 
     meta = {
         'indexes': [

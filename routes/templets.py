@@ -92,6 +92,7 @@ async def create_custom_template(data: dict, user_device: tuple = Depends(verify
     name = data.get("name")
     template_data = data.get("data")
     description = data.get("description", "")
+    category = data.get("category") or "Uncategorized"
 
     if not name or not template_data:
         raise HTTPException(status_code=400, detail="Name and data are required.")
@@ -104,7 +105,8 @@ async def create_custom_template(data: dict, user_device: tuple = Depends(verify
             owner=current_user.id,
             name=name,
             description=description,
-            data=template_data
+            data=template_data,
+            category=category 
         )
         template.save()
         return {"message": "Custom template created successfully", "template": template.to_mongo().to_dict()}

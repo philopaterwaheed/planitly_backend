@@ -4,7 +4,7 @@ from .category import Category_db
 import uuid
 from mongoengine import Document, StringField, DictField, ReferenceField, ListField, BooleanField, NULLIFY, DateTimeField
 from mongoengine.errors import DoesNotExist, ValidationError
-from .templets import TEMPLATES
+from .templets import TEMPLATES, CustomTemplate_db
 from .arrayItem import Arrays
 import datetime
 
@@ -119,20 +119,41 @@ class Subject:
         }
 
     async def apply_template(self, template):
-        """Apply a template to the subject and set its category."""
-        if template not in TEMPLATES:
-            raise ValueError(f"Template '{template}' does not exist.")
-        
-        self.template = template
-        self.category = TEMPLATES[template]["category"]  # Set category from template
-
-        for comp in TEMPLATES[template]["components"]:
-            is_comp_deletable = comp.get("is_deletable", True)
-            await self.add_component(comp["name"], comp["type"], comp["data"], is_deletable=is_comp_deletable)
-
-        # Add widgets from template if they exist
-        if "widgets" in TEMPLATES[template]:
-            for widget in TEMPLATES[template]["widgets"]:
+        """
+        Apply a template to the subject and set its category.
+        Supports both built-in and custom templates.
+        """
+        # First, check built-in templates
+        if template in TEMPLATES:
+            self.template = template
+            self.category = TEMPLATES[template].get("category", "Uncategorized")
+            for comp in TEMPLATES[template]["components"]:
+                is_comp_deletable = comp.get("is_deletable", True)
+                await self.add_component(comp["name"], comp["type"], comp["data"], is_deletable=is_comp_deletable)
+            # Add widgets from template if they exist
+            if "widgets" in TEMPLATES[template]:
+                for widget in TEMPLATES[template]["widgets"]:
+                    reference_component = widget.get("reference_component", None)
+                    await self.add_widget(
+                        widget["name"],
+                        widget["type"],
+                        widget.get("data", {}),
+                        reference_component,
+                        widget.get("is_deletable", True),
+                    )
+        else:
+            # Try to find a custom template by id
+            custom_template = CustomTemplate_db.objects(id=template).first()
+            if not custom_template:
+                raise ValueError(f"Template '{template}' does not exist.")
+            self.template = str(custom_template.id)
+            self.category = custom_template.category or "Uncategorized"
+            components = custom_template.data.get("components", [])
+            for comp in components:
+                is_comp_deletable = comp.get("is_deletable", True)
+                await self.add_component(comp["name"], comp["type"], comp["data"], is_deletable=is_comp_deletable)
+            widgets = custom_template.data.get("widgets", [])
+            for widget in widgets:
                 reference_component = widget.get("reference_component", None)
                 await self.add_widget(
                     widget["name"],
