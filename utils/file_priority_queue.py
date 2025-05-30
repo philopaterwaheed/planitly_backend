@@ -304,8 +304,8 @@ class FilePriorityQueue(Generic[T, V]):
             return
 
         with self.lock:
-            # Create a sorted copy of the buffer without modifying the heap
-            sorted_buffer = sorted(self.buffer)
+            # Copy the buffer as-is (heap order, no sort)
+            buffer_copy = list(self.buffer)
 
             # Create a unique chunk ID
             chunk_id = self._get_new_chunk_id()
@@ -319,13 +319,14 @@ class FilePriorityQueue(Generic[T, V]):
 
             # Write buffer to temp file
             success = self._safe_write_pickle(
-                sorted_buffer, final_chunk_path, temp_chunk_path)
+                buffer_copy, final_chunk_path, temp_chunk_path)
 
             if success:
                 # Update index information
                 self.chunk_files.append(final_chunk_path)
+                # The buffer is a heap, so the min is always at index 0
                 self.min_priorities.append(
-                    sorted_buffer[0][0] if sorted_buffer else None)
+                    buffer_copy[0][0] if buffer_copy else None)
 
                 # Clear buffer only if successfully written
                 self.buffer = []
@@ -353,6 +354,8 @@ class FilePriorityQueue(Generic[T, V]):
                 chunk_path = self.chunk_files[best_chunk_idx]
                 chunk_data = self._safe_read_pickle(chunk_path, default=[])
                 if chunk_data:
+                    # Heapify chunk data before popping
+                    heapq.heapify(chunk_data)
                     best_in_chunk = chunk_data[0]
 
             # Compare best from buffer and chunks
@@ -379,9 +382,10 @@ class FilePriorityQueue(Generic[T, V]):
                     self._remove_operation_lock("pop")
                     return self.pop()  # Try again
 
+                # Heapify before popping
+                heapq.heapify(chunk_data)
                 # Get highest priority item
-                priority, _, value = chunk_data[0]
-                chunk_data.pop(0)
+                priority, _, value = heapq.heappop(chunk_data)
 
                 # Update the file
                 if chunk_data:
@@ -460,6 +464,7 @@ class FilePriorityQueue(Generic[T, V]):
                 chunk_path = self.chunk_files[best_chunk_idx]
                 chunk_data = self._safe_read_pickle(chunk_path, default=[])
                 if chunk_data:
+                    heapq.heapify(chunk_data)
                     best_in_chunk = chunk_data[0]
 
             # Compare best from buffer and chunks
