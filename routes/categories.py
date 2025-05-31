@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException, status, Depends
-from models import Category_db, Subject_db
+from models import Category_db , Subject_db
 from middleWares import verify_device
 import uuid
 
@@ -48,7 +48,8 @@ async def create_category(
 
         return {
             "message": "Category created successfully.",
-            "category": category.to_json(),
+            "id": category.id,
+            "name": category.name,
             "subjects_updated": updated_subjects
         }
     except Exception as e:
@@ -84,9 +85,7 @@ async def delete_category(category_name: str, user_device: tuple = Depends(verif
     """Delete a category and set all its associated subjects to 'Uncategorized'."""
     current_user = user_device[0]
     try:
-        from models.category import Category
-        # Ensure the category exists and belongs to the current user
-        category = Category.objects(name=category_name, owner=current_user.id).first()
+        category = Category_db.objects(name=category_name, owner=current_user.id).first()
         if not category:
             raise HTTPException(status_code=404, detail=f"Category '{category_name}' not found.")
 
@@ -145,8 +144,7 @@ async def list_subjects_in_category(
     current_user = user_device[0]
     try:
         # Ensure the category exists for the user
-        from models.category import Category
-        category = Category.objects(name=category_name, owner=current_user.id).first()
+        category = Category_db.objects(name=category_name, owner=current_user.id).first()
         if not category:
             raise HTTPException(status_code=404, detail=f"Category '{category_name}' not found.")
 
