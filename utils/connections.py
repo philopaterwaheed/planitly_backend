@@ -6,6 +6,7 @@ import os
 import logging
 from .file_priority_queue import FilePriorityQueue
 import tempfile
+import threading
 
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -20,45 +21,42 @@ def execute_due_connections():
     logger.info("Starting connection execution service")
 
     try:
-        # Initial load of all pending connections
+        # Initial load of all pending connections (including far future ones)
         load_pending_connections()
-
+        
         while True:
             try:
-                # Get the next due connection
                 item = connection_queue.peek()
-                if item:
+                current_time = datetime.now(UTC)
+                # Pop and process all due connections
+                while item:
                     next_end_date, conn_id = item
-                    current_time = datetime.now(UTC)
-                    # Ensure next_end_date is timezone-aware
                     if next_end_date.tzinfo is None:
                         next_end_date = next_end_date.replace(tzinfo=UTC)
                     if next_end_date <= current_time:
-                        # Pop and execute
                         _, conn_id = connection_queue.pop()
                         logger.info(f"Executing connection: {conn_id}")
                         try:
                             connection = Connection_db.objects(id=conn_id).first()
-                            print(f"Fetched connection_db: {connection}")
                             connection_to_exec = Connection.from_db(connection)
-                            print(f"Connection to exec: {connection_to_exec}")
-                            if connection_to_exec:
-                                print(f"Connection to exec ID: {connection_to_exec.id}")
                             if not connection_to_exec:
                                 logger.error(f"Connection {conn_id} not found in database")
+                                item = connection_queue.peek()
                                 continue
                             connection_to_exec.execute()
                             logger.info(f"Connection {conn_id} executed successfully")
-                        # except DoesNotExist:
-                        #     logger.error(f"Connection {conn_id} not found in database")
                         except Exception as e:
                             logger.error(f"Failed to execute connection {conn_id}: {e}")
+                        item = connection_queue.peek()
+                        current_time = datetime.now(UTC)
                     else:
-                        # Sleep until next connection or 30s
-                        sleep_seconds = min((next_end_date - current_time).total_seconds(), 30)
-                        time.sleep(max(1, sleep_seconds))
+                        break
+                # If no due connections, sleep until the next one or a short interval
+                if item:
+                    next_end_date, _ = item
+                    sleep_seconds = min((next_end_date - current_time).total_seconds(), 30)
+                    time.sleep(max(1, sleep_seconds))
                 else:
-                    # If queue is empty, wait
                     logger.info("Connection queue empty, waiting for new connections")
                     time.sleep(10)
             except Exception as e:
@@ -142,3 +140,29 @@ def add_to_queue(connection):
         (connection.end_date, 0, conn_id))
     logger.info(f"Added connection {conn_id} to queue, scheduled for {
                 connection.end_date}")
+
+def periodic_sync_connections():
+    """Periodically sync all connections with end_date in the next 5 minutes."""
+    time.sleep(5 * 60)  # Initial delay
+    while True:
+        try:
+            logger.info("Running periodic connection sync...")
+            start_time = datetime.now(UTC)
+            end_time = start_time + timedelta(minutes=5)
+            # Fetch connections with end_date in the next 5 minutes and not done
+            upcoming_connections = Connection_db.objects(
+                done=False,
+                end_date__gt=start_time,
+                end_date__lte=end_time
+            )
+            synced_count = 0
+            for conn in upcoming_connections:
+                connection_queue.push(conn.end_date, str(conn.id))
+                synced_count += 1
+            logger.info(f"Periodic sync completed: {synced_count} connections processed")
+            elapsed = (datetime.now(UTC) - start_time).total_seconds()
+            sleep_time = max(0, 5 * 60 - elapsed)
+            time.sleep(sleep_time)
+        except Exception as e:
+            logger.error(f"Error in periodic sync: {e}")
+            time.sleep(60)  # Wait 1 minute on error

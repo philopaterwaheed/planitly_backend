@@ -12,7 +12,7 @@ import logging
 from mongoengine import connect, disconnect
 from consts import firebase_urls
 import sys
-from utils.connections import listen_for_connection_changes, load_pending_connections, execute_due_connections
+from utils.connections import listen_for_connection_changes, load_pending_connections, execute_due_connections, periodic_sync_connections
 
 # Set up logging
 logging.basicConfig(level=logging.INFO,
@@ -47,6 +47,9 @@ def run_worker():
     listener_thread = threading.Thread(target=listen_for_connection_changes, daemon=True)
     listener_thread.start()
 
+    sync_thread = threading.Thread(target=periodic_sync_connections, daemon=True)
+    sync_thread.start()
+    logger.info("Worker process started, listening for connection changes...")
     # Start execution loop
     execute_due_connections()
 
