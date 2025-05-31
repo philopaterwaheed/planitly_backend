@@ -86,8 +86,7 @@ class Connection:
                                           done=self.done)
             connection_db.save()
         except Exception as e:
-            print(f"Error saving connection with ID {
-                  self.id} to the database.")
+            print(f"Error saving connection with ID {self.id} to the database.")
             raise e
 
     @staticmethod

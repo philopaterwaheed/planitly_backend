@@ -138,8 +138,7 @@ def add_to_queue(connection):
     conn_id = str(connection.id)
     connection_queue.push(
         (connection.end_date, 0, conn_id))
-    logger.info(f"Added connection {conn_id} to queue, scheduled for {
-                connection.end_date}")
+    logger.info(f"Added connection {conn_id} to queue, scheduled for {connection.end_date}")
 
 def periodic_sync_connections():
     """Periodically sync all connections with end_date in the next 5 minutes."""

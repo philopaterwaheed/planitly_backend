@@ -28,8 +28,7 @@ async def create_access_token(user_id: str):
 async def create_refresh_token(user_id: str, device_id: str):
     """Generate a long-lived JWT refresh token and store in database."""
     expire = datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
-    token_id = hashlib.sha256(f"{user_id}:{device_id}:{
-                              time.time()}".encode()).hexdigest()
+    token_id = hashlib.sha256(f"{user_id}:{device_id}:{time.time()}".encode()).hexdigest()
 
     # Create payload with token ID for future revocation
     payload = {
