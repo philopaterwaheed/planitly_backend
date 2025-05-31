@@ -5,6 +5,8 @@ import uuid
 from middleWares import verify_device, admin_required
 from models import User, Component, Component_db, Subject, Subject_db, DataTransfer, DataTransfer_db
 from mongoengine.errors import DoesNotExist, ValidationError
+from dateutil import parser as date_parser
+import pytz
 
 router = APIRouter(prefix="/datatransfers", tags=["DataTransfer"])
 
@@ -39,9 +41,13 @@ async def create_data_transfer(data: dict, user_device: tuple = Depends(verify_d
         schedule_time = None
         if 'schedule_time' in data and data['schedule_time']:
             try:
-                schedule_time = datetime.fromisoformat(
-                    data['schedule_time'].replace("Z", "+00:00"))
-            except ValueError:
+                dt = date_parser.parse(data['schedule_time'])
+                if dt.tzinfo is None:
+                    raise HTTPException(
+                        status_code=400, detail="schedule_time must include timezone information"
+                    )
+                schedule_time = dt.astimezone(timezone.utc)
+            except Exception:
                 raise HTTPException(
                     status_code=400, detail="Invalid date format for 'schedule_time'")
 

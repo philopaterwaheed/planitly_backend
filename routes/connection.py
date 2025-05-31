@@ -2,6 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from models import User, Component, Component_db,  Subject_db, DataTransfer, DataTransfer_db, Connection_db, Connection
 from middleWares import verify_device, admin_required
 from mongoengine.errors import DoesNotExist
+from dateutil import parser as date_parser
+import pytz
 
 router = APIRouter(prefix="/connections", tags=["Connections"])
 
@@ -29,14 +31,35 @@ async def create_connection(data: dict, user_device: tuple = Depends(verify_devi
         raise HTTPException(
             status_code=400, detail="Connection type is required")
 
+    # Parse and normalize start_date and end_date to UTC
+    start_date = data.get("start_date")
+    end_date = data.get("end_date")
+    try:
+        if start_date:
+            dt = date_parser.parse(start_date)
+            if dt.tzinfo is None:
+                dt = pytz.UTC.localize(dt)
+            else:
+                dt = dt.astimezone(pytz.UTC)
+            start_date = dt
+        if end_date:
+            dt = date_parser.parse(end_date)
+            if dt.tzinfo is None:
+                dt = pytz.UTC.localize(dt)
+            else:
+                dt = dt.astimezone(pytz.UTC)
+            end_date = dt
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid date format: {e}")
+
     try:
         new_connection = Connection(
             source_subject=source_subject,
             target_subject=target_subject,
             con_type=data["con_type"],
             owner=current_user.id,
-            start_date=data.get("start_date"),
-            end_date=data.get("end_date")
+            start_date=start_date,
+            end_date=end_date
         )
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error creating connection object: {str(e)}")

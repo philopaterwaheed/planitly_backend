@@ -7,6 +7,8 @@ import logging
 from .file_priority_queue import FilePriorityQueue
 import tempfile
 import threading
+from dateutil import parser as date_parser
+import pytz
 
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -84,7 +86,7 @@ def listen_for_connection_changes():
     try:
         with collection.watch(
             [{"$match": {"operationType": {"$in": ["insert", "update", "replace"]}}}],
-            full_document='updateLookup'  # <--- This is the key!
+            full_document='updateLookup'
         ) as stream:
             for change in stream:
                 try:
@@ -92,10 +94,18 @@ def listen_for_connection_changes():
                     if doc and not doc.get("done", False):
                         print (f"Change detected: {doc}")
                         end_date = doc.get("end_date")
+                        # Always parse and convert to UTC
                         if isinstance(end_date, str):
-                            end_date = datetime.fromisoformat(end_date)
+                            dt = date_parser.parse(end_date)
+                            if dt.tzinfo is None:
+                                end_date = pytz.UTC.localize(dt)
+                            else:
+                                end_date = dt.astimezone(pytz.UTC)
                         elif isinstance(end_date, bson.datetime.datetime):
-                            end_date = end_date.replace(tzinfo=UTC)
+                            if end_date.tzinfo is None:
+                                end_date = end_date.replace(tzinfo=UTC)
+                            else:
+                                end_date = end_date.astimezone(UTC)
                         now = datetime.now(UTC)
                         five_minutes_later = now + timedelta(minutes=5)
                         if end_date <= five_minutes_later:

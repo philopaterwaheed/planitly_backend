@@ -4,6 +4,8 @@ from mongoengine import Document, StringField, DictField, ReferenceField, DateTi
 import uuid
 from pytz import UTC  # type: ignore
 from datetime import datetime
+from dateutil import parser as date_parser
+import pytz
 
 ACCEPTED_OPERATIONS = {
     "pair": ["update_key", "update_value"],
@@ -19,6 +21,23 @@ ACCEPTED_OPERATIONS = {
     "bool": ["replace", "toggle"],
     "date": ["replace"]
 }
+
+
+def parse_schedule_time(schedule_time):
+    if isinstance(schedule_time, str) and schedule_time:
+        try:
+            dt = date_parser.parse(schedule_time)
+            if dt.tzinfo is None:
+                raise ValueError("schedule_time must include timezone information.")
+            return dt.astimezone(UTC)
+        except Exception as e:
+            print(f"Error parsing schedule_time '{schedule_time}': {e}")
+            return None
+    elif isinstance(schedule_time, datetime):
+        if schedule_time.tzinfo is None:
+            raise ValueError("schedule_time datetime object must be timezone-aware.")
+        return schedule_time.astimezone(UTC)
+    return None
 
 
 class DataTransfer_db(Document):
@@ -43,7 +62,7 @@ class DataTransfer:
         self.target_component = target_component
         self.data_value = data_value
         self.operation = operation
-        self.schedule_time = schedule_time
+        self.schedule_time = parse_schedule_time(schedule_time) if schedule_time else None
         self.details = details or {}
         self.details["done"] = False
         self.owner = owner

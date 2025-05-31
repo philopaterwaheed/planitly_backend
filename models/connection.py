@@ -4,7 +4,7 @@ from .dataTransfer import DataTransfer_db, DataTransfer
 import uuid
 from mongoengine import Document, StringField, DictField, ReferenceField, ListField, DateTimeField, NULLIFY, BooleanField
 from mongoengine.errors import DoesNotExist
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 class Connection_db(Document):
@@ -21,15 +21,23 @@ class Connection_db(Document):
     meta = {'collection': 'connections'}
 
 
-def parse_date(date_str):
-    if isinstance(date_str, str) and date_str:  # Ensure the date_str is a valid string
+def parse_date(date_val):
+    from datetime import timezone
+    if isinstance(date_val, str) and date_val:
         try:
-            # Replace 'Z' with '+00:00' to handle UTC time format (e.g., 2023-03-31T12:00:00Z)
-            return datetime.fromisoformat(date_str.replace("Z", "+00:00"))
-        except ValueError as e:
-            print(f"Error parsing date '{date_str}': {e}")
+            from dateutil import parser as date_parser
+            dt = date_parser.parse(date_val)
+            if dt.tzinfo is None:
+                raise ValueError("Date string must include timezone information.")
+            return dt.astimezone(timezone.utc)
+        except Exception as e:
+            print(f"Error parsing date '{date_val}': {e}")
             return None
-    return None  # Return None if the date_str is not valid
+    elif isinstance(date_val, datetime):
+        if date_val.tzinfo is None:
+            raise ValueError("Datetime object must be timezone-aware.")
+        return date_val.astimezone(timezone.utc)
+    return None  # Return None if the date_val is not valid
 
 
 class Connection:
@@ -40,9 +48,10 @@ class Connection:
         self.con_type = con_type
         self.data_transfers = data_transfers or []
         self.owner = owner or source_subject.owner
-        print(type(start_date))
-        self.start_date = parse_date(start_date) or datetime.now()
-        self.end_date = parse_date(end_date) or datetime.now()
+        self.start_date = parse_date(start_date)
+        self.end_date = parse_date(end_date)
+        if self.start_date is None or self.end_date is None:
+            raise ValueError("start_date and end_date must be provided as timezone-aware ISO strings.")
         self.done = done or False
 
     async def add_data_transfer(self, source_component, target_component, data_value, operation, details=None):
