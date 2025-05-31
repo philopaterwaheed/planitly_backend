@@ -91,9 +91,10 @@ class Connection:
             raise e
 
     @staticmethod
-    def load_from_db(id):
+    def load_from_db(conn_id):
         try:
-            connection_db = Connection_db .objects(id=id).first()
+            print(f"Looking for connection with id: {conn_id} (type: {type(conn_id)})")
+            connection_db = Connection_db.objects(id=conn_id).first()
             if connection_db:
                 print(type(connection_db.start_date))
                 connection = Connection(
@@ -109,11 +110,30 @@ class Connection:
                 )
                 return connection
             else:
-                print(f"Connection with ID {id} not found.")
+                print(f"Connection with ID {conn_id} not found.")
                 return None
         except DoesNotExist:
-            print(f"Connection with ID {id} does not exist.")
+            print(f"Connection with ID {conn_id} does not exist.")
             return None
+
+    @staticmethod
+    def from_db(connection_db):
+        """
+        Create a Connection instance from a Connection_db document.
+        """
+        if not connection_db:
+            return None
+        return Connection(
+            id=connection_db.id,
+            source_subject=connection_db.source_subject,
+            target_subject=connection_db.target_subject,
+            con_type=connection_db.con_type,
+            data_transfers=connection_db.data_transfers,
+            owner=connection_db.owner,
+            start_date=connection_db.start_date,
+            end_date=connection_db.end_date,
+            done=connection_db.done
+        )
 
     def execute(self):
         try:
