@@ -62,7 +62,7 @@ class DataTransfer:
         self.target_component = target_component
         self.data_value = data_value
         self.operation = operation
-        self.schedule_time = parse_schedule_time(schedule_time) if schedule_time else None
+        self.schedule_time = parse_schedule_time(schedule_time) if schedule_time else datetime.now(UTC).isoformat()
         self.details = details or {}
         self.details["done"] = False
         self.owner = owner
