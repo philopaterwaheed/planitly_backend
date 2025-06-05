@@ -3,6 +3,7 @@ from models import Category_db , Subject_db
 from middleWares import verify_device
 import uuid
 from urllib.parse import unquote
+from datetime import datetime, timezone
 
 router = APIRouter(prefix="/categories", tags=["Categories"])
 
@@ -31,7 +32,12 @@ async def create_category(
             raise HTTPException(status_code=400, detail="You can add at most 10 subjects to a new category.")
 
         # Create the category
-        category = Category_db(id=str(uuid.uuid4()), name=category_name, owner=current_user.id)
+        category = Category_db(
+            id=str(uuid.uuid4()), 
+            name=category_name, 
+            owner=current_user.id,
+            created_at=datetime.now(timezone.utc)
+        )
         category.save()
 
         # Update subjects' category if subject_ids provided
@@ -51,6 +57,7 @@ async def create_category(
             "message": "Category created successfully.",
             "id": category.id,
             "name": category.name,
+            "created_at": category.created_at.isoformat(),
             "subjects_updated": updated_subjects
         }
     except Exception as e:
@@ -123,7 +130,7 @@ async def list_categories(
         if limit > MAX_LIMIT:
             limit = MAX_LIMIT
 
-        query = Category_db.objects(owner=current_user.id).order_by('-name')
+        query = Category_db.objects(owner=current_user.id).order_by('-created_at')
         total = query.count()
         categories = query.skip(skip).limit(limit)
         return {

@@ -618,8 +618,8 @@ async def message_ai(
         {
             "id": str(cat.id),
             "name": cat.name,
-            "description": cat.description,
-            "color": cat.color
+            "description": getattr(cat, 'description', ''),
+            "created_at": cat.created_at.isoformat() if hasattr(cat, 'created_at') and cat.created_at else None
         }
         for cat in categories
     ]
