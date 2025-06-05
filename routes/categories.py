@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException, status, Depends
 from models import Category_db , Subject_db
 from middleWares import verify_device
 import uuid
+from urllib.parse import unquote
 
 router = APIRouter(prefix="/categories", tags=["Categories"])
 
@@ -85,12 +86,15 @@ async def delete_category(category_name: str, user_device: tuple = Depends(verif
     """Delete a category and set all its associated subjects to 'Uncategorized'."""
     current_user = user_device[0]
     try:
-        category = Category_db.objects(name=category_name, owner=current_user.id).first()
+        # Decode URL-encoded category names (e.g., spaces as %20)
+        decoded_category_name = unquote(category_name)
+
+        category = Category_db.objects(name=decoded_category_name, owner=current_user.id).first()
         if not category:
-            raise HTTPException(status_code=404, detail=f"Category '{category_name}' not found.")
+            raise HTTPException(status_code=404, detail=f"Category '{decoded_category_name}' not found.")
 
         # Find all subjects in the category
-        subjects_in_category = Subject_db.objects(category=category_name, owner=current_user.id)
+        subjects_in_category = Subject_db.objects(category=decoded_category_name, owner=current_user.id)
 
         # Update all subjects to "Uncategorized"
         for subject in subjects_in_category:
@@ -100,7 +104,7 @@ async def delete_category(category_name: str, user_device: tuple = Depends(verif
         category.delete()
 
         return {
-            "message": f"Category '{category_name}' deleted, and all associated subjects have been set to 'Uncategorized'."
+            "message": f"Category '{decoded_category_name}' deleted, and all associated subjects have been set to 'Uncategorized'."
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
