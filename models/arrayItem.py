@@ -5,22 +5,52 @@ from pymongo import UpdateOne
 from .user import User
 # Removed the Component import from here to avoid circular import
 from mongoengine import Document, StringField, ReferenceField, DateTimeField, DynamicField, IntField
-from mongoengine.errors import NotUniqueError
+from mongoengine.errors import ValidationError
 
 
 class ArrayMetadata(Document):
-    """Array metadata model."""
+    """Array metadata model that can be hosted by either a Component or Widget."""
     user = ReferenceField(User, required=True)
     name = StringField(required=True)
-    host_component = StringField(required=True)  # Changed to StringField to store Component ID as string
-    length = IntField(default=0)  # Added length field to track array size
+    
+    # Host can be either a component or a widget (mutually exclusive)
+    host_component = StringField(required=False)  # Component ID as string
+    host_widget = StringField(required=False)     # Widget ID as string
+    
+    length = IntField(default=0)  # Track array size
     created_at = DateTimeField(default=datetime.now)
+    
     meta = {
         'collection': 'array_metadata',
         'indexes': [
-            {'fields': ['user', 'name'], 'unique': True}
+            {'fields': ['user', 'name'], 'unique': True},
+            {'fields': ['host_component']},
+            {'fields': ['host_widget']},
         ]
     }
+
+    def clean(self):
+        """Ensure exactly one host is specified."""
+        has_component = bool(self.host_component)
+        has_widget = bool(self.host_widget)
+        
+        if not has_component and not has_widget:
+            raise ValidationError("ArrayMetadata must have either host_component or host_widget")
+        
+        if has_component and has_widget:
+            raise ValidationError("ArrayMetadata cannot have both host_component and host_widget")
+
+    def get_host_id(self):
+        """Get the host ID regardless of whether it's a component or widget."""
+        return self.host_component or self.host_widget
+
+    def get_host_type(self):
+        """Get the type of host ('component' or 'widget')."""
+        if self.host_component:
+            return 'component'
+        elif self.host_widget:
+            return 'widget'
+        return None
 
     @staticmethod
     def to_dict(self):
@@ -29,6 +59,10 @@ class ArrayMetadata(Document):
             "id": str(self.id),
             "user_id": str(self.user.id),
             "name": self.name,
+            "host_component": self.host_component,
+            "host_widget": self.host_widget,
+            "host_type": self.get_host_type(),
+            "host_id": self.get_host_id(),
             "length": self.length if hasattr(self, 'length') else 0,
             "created_at": self.created_at
         }
@@ -81,25 +115,76 @@ class Arrays:
             return False, f"Unable to determine value size: {str(e)}"
 
     @staticmethod
-    def create_array(user_id, component_id, array_name, initial_elements=None):
-        """Create a new array for a user."""
+    def _get_array_metadata(user, host_id, host_type):
+        """Get array metadata by host ID and type."""
+        if host_type == 'component':
+            return ArrayMetadata.objects(user=user, host_component=str(host_id)).first()
+        elif host_type == 'widget':
+            return ArrayMetadata.objects(user=user, host_widget=str(host_id)).first()
+        else:
+            raise ValueError("host_type must be 'component' or 'widget'")
+
+    @staticmethod
+    def _detect_host_type(host_id):
+        """Detect if host_id belongs to a component or widget."""
+        try:
+            # Try to import and check if it's a component
+            from .component import Component_db
+            component = Component_db.objects(id=str(host_id)).first()
+            if component:
+                return 'component'
+            
+            # Try to check if it's a widget
+            from .widget import Widget_db
+            widget = Widget_db.objects(id=str(host_id)).first()
+            if widget:
+                return 'widget'
+            
+            return None
+        except Exception:
+            return None
+
+    @staticmethod
+    def _get_host_object(host_id, host_type=None):
+        """Get the complete host object (Component or Widget)."""
+        try:
+            if not host_type:
+                host_type = Arrays._detect_host_type(host_id)
+                if not host_type:
+                    return None, None
+            
+            if host_type == 'component':
+                from .component import Component_db
+                host = Component_db.objects(id=str(host_id)).first()
+                return host, 'component'
+            elif host_type == 'widget':
+                from .widget import Widget_db
+                host = Widget_db.objects(id=str(host_id)).first()
+                return host, 'widget'
+            else:
+                return None, None
+        except Exception:
+            return None, None
+
+    @staticmethod
+    def create_array(user_id, host_id, array_name, host_type=None, initial_elements=None):
+        """Create a new array for a user with smart host detection."""
         try:
             # Get user by ID
             user = User.objects(id=user_id).first()
             if not user:
                 return {"success": False, "message": "User not found"}
 
-            # Lazy import Component to avoid circular import
-            from .component import Component_db
-            component = Component_db.objects(id=component_id).first()
-            if not component:
-                return {"success": False, "message": "Component not found for user"}
-                
-            existing_array = ArrayMetadata.objects(
-                user=user, name=array_name).first()
+            # Get host object and type
+            host_object, detected_host_type = Arrays._get_host_object(host_id, host_type)
+            if not host_object:
+                return {"success": False, "message": "Invalid host ID - not a component or widget"}
+
+            # Check if array already exists for this host and array name
+            existing_array = Arrays._get_array_metadata_by_name(user, host_id, detected_host_type, array_name)
             if existing_array:
-                return {"success": False, "message": f"Array '{array_name}' already exists for this user"}
-                
+                return {"success": False, "message": f"Array '{array_name}' already exists for this {detected_host_type}"}
+
             # Check initial elements size
             if initial_elements:
                 if len(initial_elements) > Arrays.MAX_ARRAY_SIZE:
@@ -114,9 +199,15 @@ class Arrays:
             # Create array metadata
             array_metadata = ArrayMetadata(
                 user=user,
-                host_component=str(component_id),  # Store as string
                 name=array_name
             )
+            
+            # Set the appropriate host
+            if detected_host_type == 'component':
+                array_metadata.host_component = str(host_id)
+            else:  # widget
+                array_metadata.host_widget = str(host_id)
+            
             array_metadata.save()
 
             # Insert initial elements if provided
@@ -138,50 +229,77 @@ class Arrays:
                 array_metadata.length = len(initial_elements)
                 array_metadata.save()
 
-            return {"success": True, "message": f"Array '{array_name}' created successfully"}
+            return {
+                "success": True, 
+                "message": f"Array '{array_name}' created successfully for {detected_host_type}",
+                "host_object": host_object.to_mongo().to_dict() if hasattr(host_object, 'to_mongo') else host_object.to_dict(),
+                "host_type": detected_host_type
+            }
         except Exception as e:
             return {"success": False, "message": f"Error creating array: {e}"}
-    
-    @staticmethod
-    def get_array(user_id, component_id, page=0, page_size=100):
-        try:
-            print ("entering get_array")
-            # Log the input parameters
-            print(f"get_array called with user_id={user_id}, component_id={component_id}, page={page}, page_size={page_size}")
 
+    @staticmethod
+    def _get_array_metadata_by_name(user, host_id, host_type, array_name):
+        """Get array metadata by host ID, type, and array name."""
+        if host_type == 'component':
+            return ArrayMetadata.objects(user=user, host_component=str(host_id), name=array_name).first()
+        elif host_type == 'widget':
+            return ArrayMetadata.objects(user=user, host_widget=str(host_id), name=array_name).first()
+        else:
+            raise ValueError("host_type must be 'component' or 'widget'")
+
+    @staticmethod
+    def _get_array_metadata_by_name_or_id(user, host_id, host_type, array_name=None, array_id=None):
+        """Get array metadata by host ID, type, and either array name or array ID."""
+        if array_id:
+            # If array_id is provided, use it directly
+            metadata = ArrayMetadata.objects(id=array_id, user=user).first()
+            if metadata:
+                # Verify it belongs to the correct host
+                if host_type == 'component' and metadata.host_component == str(host_id):
+                    return metadata
+                elif host_type == 'widget' and metadata.host_widget == str(host_id):
+                    return metadata
+            return None
+        elif array_name:
+            # Use existing name-based lookup
+            return Arrays._get_array_metadata_by_name(user, host_id, host_type, array_name)
+        else:
+            # Neither provided, use default array lookup
+            return Arrays._get_array_metadata(user, host_id, host_type)
+
+    @staticmethod
+    def get_array_by_name(user_id, host_id, array_name=None, host_type=None, page=0, page_size=100, array_id=None):
+        """Get array by name or ID with smart host detection."""
+        try:
             # Get user by ID
             user = User.objects(id=user_id).first()
             if not user:
-                print(f"User with id {user_id} not found")
                 return {"success": False, "message": "User not found"}
 
-            # Get array metadata
-            array_metadata = ArrayMetadata.objects(
-                user=user, host_component=str(component_id)).first()
+            # Get host object and type
+            host_object, detected_host_type = Arrays._get_host_object(host_id, host_type)
+            if not host_object:
+                return {"success": False, "message": "Invalid host ID"}
+
+            # Get array metadata by name or ID
+            array_metadata = Arrays._get_array_metadata_by_name_or_id(user, host_id, detected_host_type, array_name, array_id)
             if not array_metadata:
-                print(f"Array metadata for component_id {component_id} not found")
-                return {"success": False, "message": f"Array '{component_id}' not found"}
+                identifier = f"ID '{array_id}'" if array_id else f"name '{array_name}'"
+                return {"success": False, "message": f"Array with {identifier} not found for {detected_host_type} '{host_id}'"}
 
             # Get total count for pagination info
-            total_count = ArrayItem_db.objects(
-                user=user, array_metadata=array_metadata).count()
-            print(f"Total items in array: {total_count}")
+            total_count = ArrayItem_db.objects(user=user, array_metadata=array_metadata).count()
                 
             # Calculate pagination values
-            total_pages = (total_count + page_size - 1) // page_size  # Ceiling division
-            print(f"Total pages: {total_pages}")
-
-            # Validate page number
+            total_pages = (total_count + page_size - 1) // page_size
             if page < 0:
-                print(f"Page number {page} is less than 0, resetting to 0")
                 page = 0
             if page >= total_pages and total_pages > 0:
-                print(f"Page number {page} exceeds total pages, resetting to {total_pages - 1}")
                 page = total_pages - 1
                 
             # Skip and limit for pagination
             skip_count = page * page_size
-            print(f"Skipping {skip_count} items, retrieving next {page_size} items")
 
             # Retrieve array elements for this page sorted by index
             elements = ArrayItem_db.objects(
@@ -189,13 +307,17 @@ class Arrays:
             ).order_by('index').skip(skip_count).limit(page_size)
 
             # Convert to pure array
-            result_array = [{"value" : element.value , "created_at" : element.created_at} for element in elements]
-            print(f"Retrieved {len(result_array)} items for page {page}")
+            result_array = [{"value": element.value, "created_at": element.created_at} for element in elements]
 
             # Return with pagination information
             return {
                 "success": True, 
                 "array": result_array,
+                "host_object": host_object.to_mongo().to_dict() if hasattr(host_object, 'to_mongo') else host_object.to_dict(),
+                "host_type": detected_host_type,
+                "host_id": str(host_id),
+                "array_name": array_metadata.name,
+                "array_id": str(array_metadata.id),
                 "pagination": {
                     "page": page,
                     "page_size": page_size,
@@ -206,7 +328,65 @@ class Arrays:
                 }
             }
         except Exception as e:
-            print(f"Error in get_array: {e}")
+            return {"success": False, "message": f"Error retrieving array: {e}"}
+
+    @staticmethod
+    def get_array(user_id, host_id, host_type=None, page=0, page_size=100):
+        """Get array with smart host detection."""
+        try:
+            # Get user by ID
+            user = User.objects(id=user_id).first()
+            if not user:
+                return {"success": False, "message": "User not found"}
+
+            # Get host object and type
+            host_object, detected_host_type = Arrays._get_host_object(host_id, host_type)
+            if not host_object:
+                return {"success": False, "message": "Invalid host ID"}
+
+            # Get array metadata
+            array_metadata = Arrays._get_array_metadata(user, host_id, detected_host_type)
+            if not array_metadata:
+                return {"success": False, "message": f"Array not found for {detected_host_type} '{host_id}'"}
+
+            # Get total count for pagination info
+            total_count = ArrayItem_db.objects(user=user, array_metadata=array_metadata).count()
+                
+            # Calculate pagination values
+            total_pages = (total_count + page_size - 1) // page_size
+            if page < 0:
+                page = 0
+            if page >= total_pages and total_pages > 0:
+                page = total_pages - 1
+                
+            # Skip and limit for pagination
+            skip_count = page * page_size
+
+            # Retrieve array elements for this page sorted by index
+            elements = ArrayItem_db.objects(
+                user=user, array_metadata=array_metadata
+            ).order_by('index').skip(skip_count).limit(page_size)
+
+            # Convert to pure array
+            result_array = [{"value": element.value, "created_at": element.created_at} for element in elements]
+
+            # Return with pagination information
+            return {
+                "success": True, 
+                "array": result_array,
+                "host_object": host_object.to_mongo().to_dict() if hasattr(host_object, 'to_mongo') else host_object.to_dict(),
+                "host_type": detected_host_type,
+                "host_id": str(host_id),
+                "pagination": {
+                    "page": page,
+                    "page_size": page_size,
+                    "total_items": total_count,
+                    "total_pages": total_pages,
+                    "has_next": page < total_pages - 1,
+                    "has_prev": page > 0
+                }
+            }
+        except Exception as e:
             return {"success": False, "message": f"Error retrieving array: {e}"}
 
     @staticmethod
@@ -216,6 +396,11 @@ class Arrays:
             user = User.objects(id=user_id).first()
             if not user:
                 return {"success": False, "message": "User not found"}
+
+            # Get host object
+            host_object, host_type = Arrays._get_host_object(component_id)
+            if not host_object:
+                return {"success": False, "message": "Invalid component ID"}
 
             # Get array metadata
             array_metadata = ArrayMetadata.objects(
@@ -240,24 +425,34 @@ class Arrays:
                 # Extend result array with batch values
                 result_array.extend([element.value for element in batch])
 
-            return {"success": True, "array": result_array}
+            return {
+                "success": True, 
+                "array": result_array,
+                "host_object": host_object.to_mongo().to_dict() if hasattr(host_object, 'to_mongo') else host_object.to_dict(),
+                "host_type": host_type
+            }
         except Exception as e:
             return {"success": False, "message": f"Error retrieving array: {e}"}
 
     @staticmethod
-    def append_to_array(user_id, component_id, value):
-        """Append a value to the end of an array."""
+    def append_to_array(user_id, host_id, value, host_type=None, array_name=None, array_id=None):
+        """Append a value to the end of an array with smart host detection and name/ID support."""
         try:
             # Get user by ID
             user = User.objects(id=user_id).first()
             if not user:
                 return {"success": False, "message": "User not found"}
 
-            # Get array metadata
-            array_metadata = ArrayMetadata.objects(
-                user=user, host_component=str(component_id)).first()
+            # Get host object and type
+            host_object, detected_host_type = Arrays._get_host_object(host_id, host_type)
+            if not host_object:
+                return {"success": False, "message": "Invalid host ID"}
+
+            # Get array metadata by name or ID
+            array_metadata = Arrays._get_array_metadata_by_name_or_id(user, host_id, detected_host_type, array_name, array_id)
             if not array_metadata:
-                return {"success": False, "message": f"Array '{component_id}' not found"}
+                identifier = f"ID '{array_id}'" if array_id else f"name '{array_name}'" if array_name else "default array"
+                return {"success": False, "message": f"Array with {identifier} not found for {detected_host_type} '{host_id}'"}
                 
             # Check value size
             is_valid, error_msg = Arrays._check_value_size(value)
@@ -289,24 +484,73 @@ class Arrays:
             array_metadata.length = new_index + 1
             array_metadata.save()
 
-            return {"success": True, "message": f"Value appended to array '{component_id}'"}
+            return {
+                "success": True, 
+                "message": f"Value appended to array '{array_metadata.name}' for {detected_host_type} '{host_id}'",
+                "host_object": host_object.to_mongo().to_dict() if hasattr(host_object, 'to_mongo') else host_object.to_dict(),
+                "host_type": detected_host_type,
+                "array_name": array_metadata.name,
+                "array_id": str(array_metadata.id)
+            }
         except Exception as e:
             return {"success": False, "message": f"Error appending to array: {e}"}
 
     @staticmethod
-    def insert_at_index(user_id, component_id, index, value):
-        """Insert a value at a specific index in the array."""
+    def delete_array(user_id, host_id, host_type=None):
+        """Delete an entire array with smart host detection."""
         try:
             # Get user by ID
             user = User.objects(id=user_id).first()
             if not user:
                 return {"success": False, "message": "User not found"}
 
+            # Get host object and type
+            host_object, detected_host_type = Arrays._get_host_object(host_id, host_type)
+            if not host_object:
+                return {"success": False, "message": "Invalid host ID"}
+
             # Get array metadata
-            array_metadata = ArrayMetadata.objects(
-                user=user, host_component=str(component_id)).first()
+            array_metadata = Arrays._get_array_metadata(user, host_id, detected_host_type)
             if not array_metadata:
-                return {"success": False, "message": f"Array '{component_id}' not found"}
+                return {"success": False, "message": f"Array not found for {detected_host_type} '{host_id}'"}
+
+            # Count elements for reporting
+            element_count = ArrayItem_db.objects(user=user, array_metadata=array_metadata).count()
+
+            # Delete all array elements
+            ArrayItem_db.objects(user=user, array_metadata=array_metadata).delete()
+
+            # Delete array metadata
+            array_metadata.delete()
+
+            return {
+                "success": True,
+                "message": f"Array for {detected_host_type} '{host_id}' deleted successfully",
+                "elements_deleted": element_count,
+                "host_object": host_object.to_mongo().to_dict() if hasattr(host_object, 'to_mongo') else host_object.to_dict(),
+                "host_type": detected_host_type
+            }
+        except Exception as e:
+            return {"success": False, "message": f"Error deleting array: {e}"}
+
+    @staticmethod
+    def insert_at_index(user_id, host_id, index, value, host_type=None, array_name=None, array_id=None):
+        """Insert a value at a specific index with smart host detection and name/ID support."""
+        try:
+            user = User.objects(id=user_id).first()
+            if not user:
+                return {"success": False, "message": "User not found"}
+
+            # Get host object and type
+            host_object, detected_host_type = Arrays._get_host_object(host_id, host_type)
+            if not host_object:
+                return {"success": False, "message": "Invalid host ID"}
+
+            # Get array metadata by name or ID
+            array_metadata = Arrays._get_array_metadata_by_name_or_id(user, host_id, detected_host_type, array_name, array_id)
+            if not array_metadata:
+                identifier = f"ID '{array_id}'" if array_id else f"name '{array_name}'" if array_name else "default array"
+                return {"success": False, "message": f"Array with {identifier} not found for {detected_host_type} '{host_id}'"}
 
             # Check value size
             is_valid, error_msg = Arrays._check_value_size(value)
@@ -326,9 +570,9 @@ class Arrays:
                 return {"success": False, "message": f"Index {index} out of bounds"}
 
             # Use bulk update with pagination to shift elements efficiently
-            PAGE_SIZE = 1000  #
+            PAGE_SIZE = 1000
             current_page = 0
-            bulk_operations = []  # Initialize outside the loop
+            bulk_operations = []
 
             while True:
                 # Get a page of elements to update
@@ -371,24 +615,35 @@ class Arrays:
             array_metadata.length = count + 1
             array_metadata.save()
 
-            return {"success": True, "message": f"Value inserted at index {index} in array '{component_id}'"}
+            return {
+                "success": True, 
+                "message": f"Value inserted at index {index} in array '{array_metadata.name}' for {detected_host_type} '{host_id}'",
+                "host_object": host_object.to_mongo().to_dict() if hasattr(host_object, 'to_mongo') else host_object.to_dict(),
+                "host_type": detected_host_type,
+                "array_name": array_metadata.name,
+                "array_id": str(array_metadata.id)
+            }
         except Exception as e:
             return {"success": False, "message": f"Error inserting at index: {e}"}
 
     @staticmethod
-    def update_at_index(user_id, component_id, index, value):
-        """Update the value at a specific index in the array."""
+    def update_at_index(user_id, host_id, index, value, array_name=None, array_id=None, host_type=None):
+        """Update the value at a specific index in the array with name/ID support."""
         try:
             # Get user by ID
             user = User.objects(id=user_id).first()
             if not user:
                 return {"success": False, "message": "User not found"}
 
-            # Get array metadata - fixed field name from component_id to host_component
-            array_metadata = ArrayMetadata.objects(
-                user=user, host_component=str(component_id)).first()
+            # Get host object and type if not provided
+            if not host_type:
+                _, host_type = Arrays._get_host_object(host_id)
+
+            # Get array metadata by name or ID
+            array_metadata = Arrays._get_array_metadata_by_name_or_id(user, host_id, host_type, array_name, array_id)
             if not array_metadata:
-                return {"success": False, "message": f"Array '{component_id}' not found"}
+                identifier = f"ID '{array_id}'" if array_id else f"name '{array_name}'" if array_name else "default array"
+                return {"success": False, "message": f"Array with {identifier} not found"}
                 
             # Check value size
             is_valid, error_msg = Arrays._check_value_size(value)
@@ -405,24 +660,33 @@ class Arrays:
             element.value = value
             element.save()
 
-            return {"success": True, "message": f"Value at index {index} updated in array '{component_id}'"}
+            return {
+                "success": True, 
+                "message": f"Value at index {index} updated in array '{array_metadata.name}' for {host_id}",
+                "array_name": array_metadata.name,
+                "array_id": str(array_metadata.id)
+            }
         except Exception as e:
             return {"success": False, "message": f"Error updating at index: {e}"}
 
     @staticmethod
-    def remove_at_index(user_id, component_id, index):
-        """Remove the value at a specific index in the array."""
+    def remove_at_index(user_id, host_id, index, array_name=None, array_id=None, host_type=None):
+        """Remove the value at a specific index in the array with name/ID support."""
         try:
             # Get user by ID
             user = User.objects(id=user_id).first()
             if not user:
                 return {"success": False, "message": "User not found"}
 
-            # Get array metadata
-            array_metadata = ArrayMetadata.objects(
-                user=user, host_component=str(component_id)).first()
+            # Get host object and type if not provided
+            if not host_type:
+                _, host_type = Arrays._get_host_object(host_id)
+
+            # Get array metadata by name or ID
+            array_metadata = Arrays._get_array_metadata_by_name_or_id(user, host_id, host_type, array_name, array_id)
             if not array_metadata:
-                return {"success": False, "message": f"Array '{component_id}' not found"}
+                identifier = f"ID '{array_id}'" if array_id else f"name '{array_name}'" if array_name else "default array"
+                return {"success": False, "message": f"Array with {identifier} not found"}
 
             # Get current array length for validation
             count = ArrayItem_db.objects(
@@ -446,9 +710,9 @@ class Arrays:
             element_to_remove.delete()
 
             # Use bulk update with pagination to shift subsequent elements efficiently
-            PAGE_SIZE = 1000  # Adjust based on your system resources
+            PAGE_SIZE = 1000
             current_page = 0
-            bulk_operations = []  # Initialize outside the loop
+            bulk_operations = []
 
             while True:
                 # Get a page of elements to update (those with indices > index)
@@ -482,7 +746,12 @@ class Arrays:
             array_metadata.length = count - 1
             array_metadata.save()
 
-            return {"success": True, "message": f"Value at index {index} removed from array '{component_id}'"}
+            return {
+                "success": True, 
+                "message": f"Value at index {index} removed from array '{array_metadata.name}' for {host_id}",
+                "array_name": array_metadata.name,
+                "array_id": str(array_metadata.id)
+            }
         except Exception as e:
             return {"success": False, "message": f"Error removing at index: {e}"}
 
@@ -536,60 +805,3 @@ class Arrays:
             return {"success": True, "slice": slice_result}
         except Exception as e:
             return {"success": False, "message": f"Error slicing array: {e}"}
-
-    @staticmethod
-    def delete_array(user_id, component_id):
-        """Delete an entire array."""
-        try:
-            # Get user by ID
-            user = User.objects(id=user_id).first()
-            if not user:
-                return {"success": False, "message": "User not found"}
-
-            # Get array metadata
-            array_metadata = ArrayMetadata.objects(
-                user=user, host_component=str(component_id)).first()
-            if not array_metadata:
-                return {"success": False, "message": f"Array '{component_id}' not found"}
-
-            # Count elements for reporting
-            element_count = ArrayItem_db.objects(
-                user=user, array_metadata=array_metadata).count()
-
-            # Delete all array elements
-            ArrayItem_db.objects(
-                user=user, array_metadata=array_metadata).delete()
-
-            # Delete array metadata
-            array_metadata.delete()
-
-            return {
-                "success": True,
-                "message": f"Array '{component_id}' deleted successfully",
-                "elements_deleted": element_count
-            }
-        except Exception as e:
-            return {"success": False, "message": f"Error deleting array: {e}"}
-
-    @staticmethod
-    def list_arrays(component_id):
-        """List all arrays for a user."""
-        try:
-            # Get all array metadata for the component
-            array_metadata_list = ArrayMetadata.objects(
-                host_component=str(component_id))
-
-            # Get array metadata with counts
-            arrays_info = []
-            for array_meta in array_metadata_list:
-                count = ArrayItem_db.objects(
-                    array_metadata=array_meta).count()
-                arrays_info.append({
-                    "name": array_meta.name,
-                    "created_at": array_meta.created_at,
-                    "element_count": count
-                })
-
-            return {"success": True, "arrays": arrays_info}
-        except Exception as e:
-            return {"success": False, "message": f"Error listing arrays: {e}"}

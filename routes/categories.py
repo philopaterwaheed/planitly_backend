@@ -1,8 +1,8 @@
 from fastapi import APIRouter, HTTPException, status, Depends
 from models import Category_db , Subject_db
 from middleWares import verify_device
+from utils import decode_name_from_url, encode_name_for_url
 import uuid
-from urllib.parse import unquote
 from datetime import datetime, timezone
 
 router = APIRouter(prefix="/categories", tags=["Categories"])
@@ -94,7 +94,7 @@ async def delete_category(category_name: str, user_device: tuple = Depends(verif
     current_user = user_device[0]
     try:
         # Decode URL-encoded category names (e.g., spaces as %20)
-        decoded_category_name = unquote(category_name)
+        decoded_category_name = decode_name_from_url(category_name)
 
         category = Category_db.objects(name=decoded_category_name, owner=current_user.id).first()
         if not category:

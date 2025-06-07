@@ -104,9 +104,9 @@ class Component:
 
     def get_array_items(self):
         if self.comp_type in ["Array_type", "Array_generic", "Array_of_pairs"]:
-            result = Arrays.get_array(self.owner, self.id)
+            result = Arrays.get_array(self.owner, self.id, host_type='component')
             if result["success"]:
-                print ("Array items retrieved successfully.")
+                print("Array items retrieved successfully.")
                 return result
         return None
 
@@ -127,6 +127,7 @@ class Component:
             })
         return None
     
+    #todo there is no more than the first page of items
     def get_component(self):
         if (self.comp_type in ["Array_type", "Array_generic", "Array_of_pairs"]):
             array_result = self.get_array_items()

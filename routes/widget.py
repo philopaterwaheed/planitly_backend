@@ -1,9 +1,10 @@
 # routers/widget.py
 from fastapi import APIRouter, Depends, HTTPException, status, Query, File, UploadFile
 from datetime import datetime, timedelta
-from models import Widget_db, Widget, Component_db, User, Subject_db, Todo_db, Todo
+from models import Widget_db, Subject, Component_db, Subject_db, Todo_db, Todo, User
 from mongoengine.errors import DoesNotExist, ValidationError
 from middleWares import verify_device
+from utils import decode_name_from_url, encode_name_for_url
 import uuid
 from typing import Optional
 from cloudinary.uploader import upload
@@ -28,31 +29,35 @@ async def create_widget(data: dict, user_device: tuple = Depends(verify_device))
                 status_code=400, detail="Name, Type, and Host Subject are required."
             )
 
-        # Validate the widget type and data
+        # Load the host subject
+        subject = Subject.load_from_db(host_subject_id)
+        if not subject:
+            raise HTTPException(status_code=404, detail="Host subject not found")
+        
+        # Check authorization
+        if subject.owner != current_user.id and not current_user.admin:
+            raise HTTPException(
+                status_code=403, detail="Not authorized to create widgets for this subject"
+            )
+
+        # Get reference component if provided
         reference_component = None
         if reference_component_id:
             reference_component = Component_db.objects.get(id=reference_component_id)
 
-        try:
-            validated_data = Widget.validate_widget_type(
-                widget_type=widget_type,
-                reference_component=reference_component,
-                data=widget_data
-            )
-            widget_data = validated_data  # Use the validated data
-        except ValidationError as e:
-            raise HTTPException(status_code=400, detail=str(e))
-
-        # Save the widget
-        widget = Widget(
-            name=widget_name,
-            type=widget_type,
-            host_subject=host_subject_id,
-            reference_component=reference_component,
+        # Use subject's add_widget function
+        widget = await subject.add_widget(
+            widget_name=widget_name,
+            widget_type=widget_type,
             data=widget_data,
-            owner=current_user.id
+            reference_component=reference_component_id,
+            is_deletable=data.get("is_deletable", True)
         )
-        widget.save_to_db()
+
+        if not widget:
+            raise HTTPException(
+                status_code=400, detail="Failed to create widget - validation error"
+            )
 
         return {"message": "Widget created successfully", "id": widget.id}
     except Exception as e:
@@ -428,6 +433,8 @@ async def update_table_columns(
 ):
     current_user = user_device[0]
     try:
+        from models.arrayItem import Arrays
+        
         widget = Widget_db.objects.get(id=widget_id)
 
         if widget.owner != current_user.id and not current_user.admin:
@@ -443,15 +450,19 @@ async def update_table_columns(
             raise HTTPException(
                 status_code=400, detail="Valid columns array is required")
 
-        widget_data = widget.data or {}
-        widget_data["columns"] = columns
-
-        # Initialize rows if not present
-        if "rows" not in widget_data:
-            widget_data["rows"] = []
-
-        widget.data = widget_data
-        widget.save()
+        # Clear existing columns array and add new columns
+        Arrays.delete_array(current_user.id, widget_id, "widget")
+        columns_result = Arrays.create_array(
+            user_id=current_user.id,
+            host_id=widget_id,
+            array_name=f"{widget.name}_columns",
+            host_type="widget",
+            initial_elements=columns
+        )
+        
+        if not columns_result["success"]:
+            raise HTTPException(
+                status_code=500, detail=f"Failed to update columns: {columns_result['message']}")
 
         return {"message": "Table columns updated successfully", "widget": widget.to_mongo().to_dict()}
     except DoesNotExist:
@@ -461,6 +472,50 @@ async def update_table_columns(
             status_code=500, detail=f"An unexpected error occurred: {str(e)}"
         )
 
+@router.get("/{widget_id}/table/columns", dependencies=[Depends(verify_device)], status_code=status.HTTP_200_OK)
+async def get_table_columns(
+    widget_id: str,
+    page: int = Query(0, ge=0),
+    page_size: int = Query(100, ge=1, le=1000),
+    user_device: tuple = Depends(verify_device)
+):
+    current_user = user_device[0]
+    try:
+        from models.arrayItem import Arrays
+        
+        widget = Widget_db.objects.get(id=widget_id)
+
+        if widget.owner != current_user.id and not current_user.admin:
+            raise HTTPException(
+                status_code=403, detail="Not authorized to access this widget")
+
+        if widget.type != "table":
+            raise HTTPException(
+                status_code=400, detail="This endpoint is only for table widgets")
+
+        # Get columns from array
+        columns_result = Arrays.get_array(
+            user_id=current_user.id,
+            host_id=widget_id,
+            host_type="widget",
+            page=page,
+            page_size=page_size
+        )
+        
+        if not columns_result["success"]:
+            raise HTTPException(
+                status_code=500, detail=f"Failed to get columns: {columns_result['message']}")
+
+        return {
+            "columns": [item["value"] for item in columns_result["array"]],
+            "pagination": columns_result["pagination"]
+        }
+    except DoesNotExist:
+        raise HTTPException(status_code=404, detail="Widget not found")
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"An unexpected error occurred: {str(e)}"
+        )
 
 @router.post("/{widget_id}/table/rows", dependencies=[Depends(verify_device)], status_code=status.HTTP_201_CREATED)
 async def add_table_row(
@@ -470,6 +525,8 @@ async def add_table_row(
 ):
     current_user = user_device[0]
     try:
+        from models.arrayItem import Arrays
+        
         widget = Widget_db.objects.get(id=widget_id)
 
         if widget.owner != current_user.id and not current_user.admin:
@@ -485,24 +542,21 @@ async def add_table_row(
             raise HTTPException(
                 status_code=400, detail="Valid row object is required")
 
-        widget_data = widget.data or {}
-
-        # Ensure columns exist
-        if "columns" not in widget_data or not widget_data["columns"]:
-            raise HTTPException(
-                status_code=400, detail="Table must have columns defined before adding rows")
-
-        # Initialize rows if not present
-        if "rows" not in widget_data:
-            widget_data["rows"] = []
-
         # Add row ID if not provided
         if "id" not in row:
             row["id"] = str(uuid.uuid4())
 
-        widget_data["rows"].append(row)
-        widget.data = widget_data
-        widget.save()
+        # Add row to rows array
+        rows_result = Arrays.append_to_array(
+            user_id=current_user.id,
+            host_id=widget_id,
+            value=row,
+            host_type="widget"
+        )
+        
+        if not rows_result["success"]:
+            raise HTTPException(
+                status_code=500, detail=f"Failed to add row: {rows_result['message']}")
 
         return {"message": "Table row added successfully", "row": row}
     except DoesNotExist:
@@ -512,89 +566,44 @@ async def add_table_row(
             status_code=500, detail=f"An unexpected error occurred: {str(e)}"
         )
 
-
-@router.put("/{widget_id}/table/rows/{row_id}", dependencies=[Depends(verify_device)], status_code=status.HTTP_200_OK)
-async def update_table_row(
+@router.get("/{widget_id}/table/rows", dependencies=[Depends(verify_device)], status_code=status.HTTP_200_OK)
+async def get_table_rows(
     widget_id: str,
-    row_id: str,
-    row_data: dict,
-    user_device: tuple =Depends(verify_device)
-):
-    try:
-        widget = Widget_db.objects.get(id=widget_id)
-
-        current_user = user_device[0]
-        if widget.owner != current_user.id and not current_user.admin:
-            raise HTTPException(
-                status_code=403, detail="Not authorized to update this widget")
-
-        if widget.type != "table":
-            raise HTTPException(
-                status_code=400, detail="This endpoint is only for table widgets")
-
-        row_updates = row_data.get("row")
-        if not row_updates or not isinstance(row_updates, dict):
-            raise HTTPException(
-                status_code=400, detail="Valid row updates are required")
-
-        widget_data = widget.data or {}
-        rows = widget_data.get("rows", [])
-
-        # Find the row by ID
-        row_index = next((i for i, row in enumerate(
-            rows) if row.get("id") == row_id), None)
-        if row_index is None:
-            raise HTTPException(status_code=404, detail="Row not found")
-
-        # Preserve the row ID
-        row_updates["id"] = row_id
-
-        # Update the row
-        rows[row_index] = row_updates
-        widget.data = widget_data
-        widget.save()
-
-        return {"message": "Table row updated successfully", "row": rows[row_index]}
-    except DoesNotExist:
-        raise HTTPException(status_code=404, detail="Widget not found")
-    except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"An unexpected error occurred: {str(e)}"
-        )
-
-
-@router.delete("/{widget_id}/table/rows/{row_id}", dependencies=[Depends(verify_device)], status_code=status.HTTP_200_OK)
-async def delete_table_row(
-    widget_id: str,
-    row_id: str,
-    user_device: tuple =Depends(verify_device)
+    page: int = Query(0, ge=0),
+    page_size: int = Query(100, ge=1, le=1000),
+    user_device: tuple = Depends(verify_device)
 ):
     current_user = user_device[0]
     try:
+        from models.arrayItem import Arrays
+        
         widget = Widget_db.objects.get(id=widget_id)
 
         if widget.owner != current_user.id and not current_user.admin:
             raise HTTPException(
-                status_code=403, detail="Not authorized to update this widget")
+                status_code=403, detail="Not authorized to access this widget")
 
         if widget.type != "table":
             raise HTTPException(
                 status_code=400, detail="This endpoint is only for table widgets")
 
-        widget_data = widget.data or {}
-        rows = widget_data.get("rows", [])
+        # Get rows from array with pagination
+        rows_result = Arrays.get_array(
+            user_id=current_user.id,
+            host_id=widget_id,
+            host_type="widget",
+            page=page,
+            page_size=page_size
+        )
+        
+        if not rows_result["success"]:
+            raise HTTPException(
+                status_code=500, detail=f"Failed to get rows: {rows_result['message']}")
 
-        # Find and remove the row by ID
-        original_length = len(rows)
-        widget_data["rows"] = [row for row in rows if row.get("id") != row_id]
-
-        if len(widget_data["rows"]) == original_length:
-            raise HTTPException(status_code=404, detail="Row not found")
-
-        widget.data = widget_data
-        widget.save()
-
-        return {"message": "Table row deleted successfully"}
+        return {
+            "rows": [item["value"] for item in rows_result["array"]],
+            "pagination": rows_result["pagination"]
+        }
     except DoesNotExist:
         raise HTTPException(status_code=404, detail="Widget not found")
     except Exception as e:
@@ -934,6 +943,973 @@ async def mark_all_todos_undone_for_date(
 
     except DoesNotExist:
         raise HTTPException(status_code=404, detail="Widget not found")
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"An unexpected error occurred: {str(e)}"
+        )
+
+# GENERIC ARRAY WIDGET ENDPOINTS BY WIDGET ID ONLY
+
+@router.put("/{widget_id}/array/{array_name}/element/{index}", dependencies=[Depends(verify_device)], status_code=status.HTTP_200_OK)
+async def update_array_element_by_widget_id(
+    widget_id: str,
+    array_name: str,
+    index: int,
+    element_data: dict,
+    user_device: tuple = Depends(verify_device)
+):
+    """Update a single element in a widget's array by index using only widget ID."""
+    current_user = user_device[0]
+    try:
+        from models.arrayItem import Arrays
+        
+        # Decode the array name from URL
+        decoded_array_name = decode_name_from_url(array_name)
+        
+        # Verify widget exists and user has access
+        widget = Widget_db.objects.get(id=widget_id)
+        
+        if widget.owner != current_user.id and not current_user.admin:
+            raise HTTPException(
+                status_code=403, detail="Not authorized to update this widget")
+
+        # Get the new value from request data
+        new_value = element_data.get("value")
+        if new_value is None:
+            raise HTTPException(
+                status_code=400, detail="Value field is required")
+
+        # Update the element using Arrays class with decoded array_name parameter
+        result = Arrays.update_at_index(
+            user_id=current_user.id,
+            host_id=widget_id,
+            index=index,
+            value=new_value,
+            host_type="widget",
+            array_name=decoded_array_name
+        )
+        
+        if not result["success"]:
+            raise HTTPException(
+                status_code=400, detail=f"Failed to update element: {result['message']}")
+
+        return {
+            "message": f"Element at index {index} updated successfully",
+            "widget_id": widget_id,
+            "widget_name": widget.name,
+            "widget_type": widget.widget_type,
+            "array_name": decoded_array_name,
+            "index": index,
+            "new_value": new_value
+        }
+        
+    except DoesNotExist:
+        raise HTTPException(status_code=404, detail="Widget not found")
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"An unexpected error occurred: {str(e)}"
+        )
+
+@router.delete("/{widget_id}/array/{array_name}/element/{index}", dependencies=[Depends(verify_device)], status_code=status.HTTP_200_OK)
+async def delete_array_element_by_widget_id(
+    widget_id: str,
+    array_name: str,
+    index: int,
+    user_device: tuple = Depends(verify_device)
+):
+    """Delete a single element from a widget's array by index using only widget ID."""
+    current_user = user_device[0]
+    try:
+        from models.arrayItem import Arrays
+        
+        # Decode the array name from URL
+        decoded_array_name = decode_name_from_url(array_name)
+        
+        # Verify widget exists and user has access
+        widget = Widget_db.objects.get(id=widget_id)
+        
+        if widget.owner != current_user.id and not current_user.admin:
+            raise HTTPException(
+                status_code=403, detail="Not authorized to update this widget")
+
+        # Remove the element using Arrays class with decoded array_name parameter
+        result = Arrays.remove_at_index(
+            user_id=current_user.id,
+            host_id=widget_id,
+            index=index,
+            host_type="widget",
+            array_name=decoded_array_name
+        )
+        
+        if not result["success"]:
+            raise HTTPException(
+                status_code=400, detail=f"Failed to delete element: {result['message']}")
+
+        return {
+            "message": f"Element at index {index} deleted successfully",
+            "widget_id": widget_id,
+            "widget_name": widget.name,
+            "widget_type": widget.widget_type,
+            "array_name": decoded_array_name,
+            "index": index
+        }
+        
+    except DoesNotExist:
+        raise HTTPException(status_code=404, detail="Widget not found")
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"An unexpected error occurred: {str(e)}"
+        )
+
+@router.post("/{widget_id}/array/{array_name}/element", dependencies=[Depends(verify_device)], status_code=status.HTTP_201_CREATED)
+async def add_array_element_by_widget_id(
+    widget_id: str,
+    array_name: str,
+    element_data: dict,
+    user_device: tuple = Depends(verify_device)
+):
+    """Add a single element to a widget's array using only widget ID."""
+    current_user = user_device[0]
+    try:
+        from models.arrayItem import Arrays
+        
+        # Decode the array name from URL
+        decoded_array_name = decode_name_from_url(array_name)
+        
+        # Verify widget exists and user has access
+        widget = Widget_db.objects.get(id=widget_id)
+        
+        if widget.owner != current_user.id and not current_user.admin:
+            raise HTTPException(
+                status_code=403, detail="Not authorized to update this widget")
+
+        # Get the new value from request data
+        new_value = element_data.get("value")
+        if new_value is None:
+            raise HTTPException(
+                status_code=400, detail="Value field is required")
+
+        # Check if we should insert at specific index or append
+        index = element_data.get("index")
+        
+        if index is not None:
+            # Insert at specific index
+            result = Arrays.insert_at_index(
+                user_id=current_user.id,
+                host_id=widget_id,
+                index=index,
+                value=new_value,
+                host_type="widget",
+                array_name=decoded_array_name
+            )
+        else:
+            # Append to end
+            result = Arrays.append_to_array(
+                user_id=current_user.id,
+                host_id=widget_id,
+                value=new_value,
+                host_type="widget",
+                array_name=decoded_array_name
+            )
+        
+        if not result["success"]:
+            raise HTTPException(
+                status_code=400, detail=f"Failed to add element: {result['message']}")
+
+        return {
+            "message": "Element added successfully",
+            "widget_id": widget_id,
+            "widget_name": widget.name,
+            "widget_type": widget.widget_type,
+            "array_name": decoded_array_name,
+            "value": new_value,
+            "index": index if index is not None else "appended"
+        }
+        
+    except DoesNotExist:
+        raise HTTPException(status_code=404, detail="Widget not found")
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"An unexpected error occurred: {str(e)}"
+        )
+
+@router.get("/{widget_id}/array/{array_name}", dependencies=[Depends(verify_device)], status_code=status.HTTP_200_OK)
+async def get_widget_array_by_id(
+    widget_id: str,
+    array_name: str,
+    page: int = Query(0, ge=0),
+    page_size: int = Query(100, ge=1, le=1000),
+    user_device: tuple = Depends(verify_device)
+):
+    """Get a widget's array by name using only widget ID with pagination."""
+    current_user = user_device[0]
+    try:
+        from models.arrayItem import Arrays, ArrayMetadata
+        
+        # Decode the array name from URL
+        decoded_array_name = decode_name_from_url(array_name)
+        
+        # Verify widget exists and user has access
+        widget = Widget_db.objects.get(id=widget_id)
+        
+        if widget.owner != current_user.id and not current_user.admin:
+            raise HTTPException(
+                status_code=403, detail="Not authorized to access this widget")
+
+        # Get array by name using enhanced function
+        result = Arrays.get_array_by_name(
+            user_id=current_user.id,
+            host_id=widget_id,
+            array_name=decoded_array_name,
+            host_type="widget",
+            page=page,
+            page_size=page_size
+        )
+        
+        if not result["success"]:
+            raise HTTPException(
+                status_code=404, detail=f"Array not found: {result['message']}")
+
+        return {
+            "widget_id": widget_id,
+            "widget_name": widget.name,
+            "widget_type": widget.widget_type,
+            "array_name": decoded_array_name,
+            "elements": [item["value"] for item in result["array"]],
+            "pagination": result["pagination"]
+        }
+        
+    except DoesNotExist:
+        raise HTTPException(status_code=404, detail="Widget not found")
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"An unexpected error occurred: {str(e)}"
+        )
+
+@router.put("/{widget_id}/array/{array_name}/bulk-update", dependencies=[Depends(verify_device)], status_code=status.HTTP_200_OK)
+async def bulk_update_array_elements_by_widget_id(
+    widget_id: str,
+    array_name: str,
+    bulk_data: dict,
+    user_device: tuple = Depends(verify_device)
+):
+    """Bulk update multiple elements in a widget's array using only widget ID."""
+    current_user = user_device[0]
+    try:
+        from models.arrayItem import Arrays
+        
+        # Decode the array name from URL
+        decoded_array_name = decode_name_from_url(array_name)
+        
+        # Verify widget exists and user has access
+        widget = Widget_db.objects.get(id=widget_id)
+        
+        if widget.owner != current_user.id and not current_user.admin:
+            raise HTTPException(
+                status_code=403, detail="Not authorized to update this widget")
+
+        # Get the updates from request data
+        updates = bulk_data.get("updates")
+        if not updates or not isinstance(updates, list):
+            raise HTTPException(
+                status_code=400, detail="Updates field with list of updates is required")
+
+        successful_updates = 0
+        failed_updates = []
+
+        # Process each update
+        for update in updates:
+            index = update.get("index")
+            value = update.get("value")
+            
+            if index is None or value is None:
+                failed_updates.append({
+                    "update": update,
+                    "error": "Both index and value are required"
+                })
+                continue
+
+            # Update the element using enhanced function
+            result = Arrays.update_at_index(
+                user_id=current_user.id,
+                host_id=widget_id,
+                index=index,
+                value=value,
+                host_type="widget",
+                array_name=decoded_array_name
+            )
+            
+            if result["success"]:
+                successful_updates += 1
+            else:
+                failed_updates.append({
+                    "update": update,
+                    "error": result["message"]
+                })
+
+        return {
+            "message": f"Bulk update completed",
+            "widget_id": widget_id,
+            "widget_name": widget.name,
+            "widget_type": widget.widget_type,
+            "array_name": decoded_array_name,
+            "successful_updates": successful_updates,
+            "failed_updates": len(failed_updates),
+            "failed_details": failed_updates
+        }
+        
+    except DoesNotExist:
+        raise HTTPException(status_code=404, detail="Widget not found")
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"An unexpected error occurred: {str(e)}"
+        )
+
+@router.delete("/{widget_id}/array/{array_name}/bulk-delete", dependencies=[Depends(verify_device)], status_code=status.HTTP_200_OK)
+async def bulk_delete_array_elements_by_widget_id(
+    widget_id: str,
+    array_name: str,
+    bulk_data: dict,
+    user_device: tuple = Depends(verify_device)
+):
+    """Bulk delete multiple elements from a widget's array using only widget ID."""
+    current_user = user_device[0]
+    try:
+        from models.arrayItem import Arrays
+        
+        # Decode the array name from URL
+        decoded_array_name = decode_name_from_url(array_name)
+        
+        # Verify widget exists and user has access
+        widget = Widget_db.objects.get(id=widget_id)
+        
+        if widget.owner != current_user.id and not current_user.admin:
+            raise HTTPException(
+                status_code=403, detail="Not authorized to update this widget")
+
+        # Get the indices from request data
+        indices = bulk_data.get("indices")
+        if not indices or not isinstance(indices, list):
+            raise HTTPException(
+                status_code=400, detail="Indices field with list of indices is required")
+
+        # Sort indices in descending order to avoid index shifting issues
+        indices.sort(reverse=True)
+
+        successful_deletions = 0
+        failed_deletions = []
+
+        # Process each deletion
+        for index in indices:
+            if not isinstance(index, int):
+                failed_deletions.append({
+                    "index": index,
+                    "error": "Index must be an integer"
+                })
+                continue
+
+            # Delete the element using enhanced function
+            result = Arrays.remove_at_index(
+                user_id=current_user.id,
+                host_id=widget_id,
+                index=index,
+                host_type="widget",
+                array_name=decoded_array_name
+            )
+            
+            if result["success"]:
+                successful_deletions += 1
+            else:
+                failed_deletions.append({
+                    "index": index,
+                    "error": result["message"]
+                })
+
+        return {
+            "message": f"Bulk deletion completed",
+            "widget_id": widget_id,
+            "widget_name": widget.name,
+            "widget_type": widget.widget_type,
+            "array_name": decoded_array_name,
+            "successful_deletions": successful_deletions,
+            "failed_deletions": len(failed_deletions),
+            "failed_details": failed_deletions
+        }
+        
+    except DoesNotExist:
+        raise HTTPException(status_code=404, detail="Widget not found")
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"An unexpected error occurred: {str(e)}"
+        )
+
+@router.get("/{widget_id}/array/{array_name}/search", dependencies=[Depends(verify_device)], status_code=status.HTTP_200_OK)
+async def search_in_widget_array(
+    widget_id: str,
+    array_name: str,
+    search_value: str = Query(..., description="Value to search for"),
+    user_device: tuple = Depends(verify_device)
+):
+    """Search for a value in a widget's array using only widget ID."""
+    current_user = user_device[0]
+    try:
+        from models.arrayItem import Arrays, ArrayItem_db, ArrayMetadata
+        
+        # Decode the array name from URL
+        decoded_array_name = decode_name_from_url(array_name)
+        
+        # Verify widget exists and user has access
+        widget = Widget_db.objects.get(id=widget_id)
+        
+        if widget.owner != current_user.id and not current_user.admin:
+            raise HTTPException(
+                status_code=403, detail="Not authorized to access this widget")
+
+        # Get user object
+        user = User.objects(id=current_user.id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        # Get array metadata by name
+        array_metadata = Arrays._get_array_metadata_by_name(user, widget_id, "widget", decoded_array_name)
+        if not array_metadata:
+            raise HTTPException(
+                status_code=404, detail=f"Array '{decoded_array_name}' not found for widget")
+
+        # Search for elements containing the search value
+        # For exact match
+        exact_matches = ArrayItem_db.objects(
+            user=user,
+            array_metadata=array_metadata,
+            value=search_value
+        )
+
+        # For partial matches (if value is string)
+        partial_matches = []
+        if isinstance(search_value, str):
+            # This is a simplified search - you might want to implement more sophisticated search
+            all_elements = ArrayItem_db.objects(
+                user=user,
+                array_metadata=array_metadata
+            )
+            
+            for element in all_elements:
+                if isinstance(element.value, str) and search_value.lower() in element.value.lower():
+                    if element not in exact_matches:  # Avoid duplicates
+                        partial_matches.append(element)
+
+        exact_results = [{"index": elem.index, "value": elem.value} for elem in exact_matches]
+        partial_results = [{"index": elem.index, "value": elem.value} for elem in partial_matches]
+
+        return {
+            "widget_id": widget_id,
+            "widget_name": widget.name,
+            "array_name": decoded_array_name,
+            "search_value": search_value,
+            "exact_matches": exact_results,
+            "partial_matches": partial_results,
+            "total_matches": len(exact_results) + len(partial_results)
+        }
+        
+    except DoesNotExist:
+        raise HTTPException(status_code=404, detail="Widget not found")
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"An unexpected error occurred: {str(e)}"
+        )
+
+# ARRAY WIDGET ENDPOINTS BY WIDGET ID AND ARRAY ID
+
+@router.put("/{widget_id}/array/id/{array_id}/element/{index}", dependencies=[Depends(verify_device)], status_code=status.HTTP_200_OK)
+async def update_array_element_by_array_id(
+    widget_id: str,
+    array_id: str,
+    index: int,
+    element_data: dict,
+    user_device: tuple = Depends(verify_device)
+):
+    """Update a single element in a widget's array by index using widget ID and array ID."""
+    current_user = user_device[0]
+    try:
+        from models.arrayItem import Arrays, ArrayMetadata
+        
+        # Verify widget exists and user has access
+        widget = Widget_db.objects.get(id=widget_id)
+        
+        if widget.owner != current_user.id and not current_user.admin:
+            raise HTTPException(
+                status_code=403, detail="Not authorized to update this widget")
+
+        # Verify array metadata exists and belongs to this widget and user
+        array_metadata = ArrayMetadata.objects.get(
+            id=array_id,
+            user=current_user.id,
+            host_widget=widget_id
+        )
+
+        # Get the new value from request data
+        new_value = element_data.get("value")
+        if new_value is None:
+            raise HTTPException(
+                status_code=400, detail="Value field is required")
+
+        # Update the element using enhanced function with array_id
+        result = Arrays.update_at_index(
+            user_id=current_user.id,
+            host_id=widget_id,
+            index=index,
+            value=new_value,
+            host_type="widget",
+            array_id=array_id
+        )
+        
+        if not result["success"]:
+            raise HTTPException(
+                status_code=400, detail=f"Failed to update element: {result['message']}")
+
+        return {
+            "message": f"Element at index {index} updated successfully",
+            "widget_id": widget_id,
+            "widget_name": widget.name,
+            "widget_type": widget.widget_type,
+            "array_id": array_id,
+            "array_name": array_metadata.name,
+            "index": index,
+            "new_value": new_value
+        }
+        
+    except DoesNotExist:
+        raise HTTPException(status_code=404, detail="Widget or array not found")
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"An unexpected error occurred: {str(e)}"
+        )
+
+@router.delete("/{widget_id}/array/id/{array_id}/element/{index}", dependencies=[Depends(verify_device)], status_code=status.HTTP_200_OK)
+async def delete_array_element_by_array_id(
+    widget_id: str,
+    array_id: str,
+    index: int,
+    user_device: tuple = Depends(verify_device)
+):
+    """Delete a single element from a widget's array by index using widget ID and array ID."""
+    current_user = user_device[0]
+    try:
+        from models.arrayItem import Arrays, ArrayMetadata
+        
+        # Verify widget exists and user has access
+        widget = Widget_db.objects.get(id=widget_id)
+        
+        if widget.owner != current_user.id and not current_user.admin:
+            raise HTTPException(
+                status_code=403, detail="Not authorized to update this widget")
+
+        # Verify array metadata exists and belongs to this widget and user
+        array_metadata = ArrayMetadata.objects.get(
+            id=array_id,
+            user=current_user.id,
+            host_widget=widget_id
+        )
+
+        # Remove the element using Arrays class
+        result = Arrays.remove_at_index(
+            user_id=current_user.id,
+            host_id=widget_id,
+            index=index,
+            host_type="widget",
+            array_id=array_id
+        )
+        
+        if not result["success"]:
+            raise HTTPException(
+                status_code=400, detail=f"Failed to delete element: {result['message']}")
+
+        return {
+            "message": f"Element at index {index} deleted successfully",
+            "widget_id": widget_id,
+            "widget_name": widget.name,
+            "widget_type": widget.widget_type,
+            "array_id": array_id,
+            "array_name": array_metadata.name,
+            "index": index
+        }
+        
+    except DoesNotExist:
+        raise HTTPException(status_code=404, detail="Widget or array not found")
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"An unexpected error occurred: {str(e)}"
+        )
+
+@router.post("/{widget_id}/array/id/{array_id}/element", dependencies=[Depends(verify_device)], status_code=status.HTTP_201_CREATED)
+async def add_array_element_by_array_id(
+    widget_id: str,
+    array_id: str,
+    element_data: dict,
+    user_device: tuple = Depends(verify_device)
+):
+    """Add a single element to a widget's array using widget ID and array ID."""
+    current_user = user_device[0]
+    try:
+        from models.arrayItem import Arrays, ArrayMetadata
+        
+        # Verify widget exists and user has access
+        widget = Widget_db.objects.get(id=widget_id)
+        
+        if widget.owner != current_user.id and not current_user.admin:
+            raise HTTPException(
+                status_code=403, detail="Not authorized to update this widget")
+
+        # Verify array metadata exists and belongs to this widget and user
+        array_metadata = ArrayMetadata.objects.get(
+            id=array_id,
+            user=current_user.id,
+            host_widget=widget_id
+        )
+
+        # Get the new value from request data
+        new_value = element_data.get("value")
+        if new_value is None:
+            raise HTTPException(
+                status_code=400, detail="Value field is required")
+
+        # Check if we should insert at specific index or append
+        index = element_data.get("index")
+        
+        if index is not None:
+            # Insert at specific index
+            result = Arrays.insert_at_index(
+                user_id=current_user.id,
+                host_id=widget_id,
+                index=index,
+                value=new_value,
+                host_type="widget",
+                array_id=array_id
+            )
+        else:
+            # Append to end
+            result = Arrays.append_to_array(
+                user_id=current_user.id,
+                host_id=widget_id,
+                value=new_value,
+                host_type="widget",
+                array_id=array_id
+            )
+        
+        if not result["success"]:
+            raise HTTPException(
+                status_code=400, detail=f"Failed to add element: {result['message']}")
+
+        return {
+            "message": "Element added successfully",
+            "widget_id": widget_id,
+            "widget_name": widget.name,
+            "widget_type": widget.widget_type,
+            "array_id": array_id,
+            "array_name": array_metadata.name,
+            "value": new_value,
+            "index": index if index is not None else "appended"
+        }
+        
+    except DoesNotExist:
+        raise HTTPException(status_code=404, detail="Widget or array not found")
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"An unexpected error occurred: {str(e)}"
+        )
+
+@router.get("/{widget_id}/array/id/{array_id}", dependencies=[Depends(verify_device)], status_code=status.HTTP_200_OK)
+async def get_widget_array_by_array_id(
+    widget_id: str,
+    array_id: str,
+    page: int = Query(0, ge=0),
+    page_size: int = Query(100, ge=1, le=1000),
+    user_device: tuple = Depends(verify_device)
+):
+    """Get a widget's array using widget ID and array ID with pagination."""
+    current_user = user_device[0]
+    try:
+        from models.arrayItem import Arrays, ArrayMetadata
+        
+        # Verify widget exists and user has access
+        widget = Widget_db.objects.get(id=widget_id)
+        
+        if widget.owner != current_user.id and not current_user.admin:
+            raise HTTPException(
+                status_code=403, detail="Not authorized to access this widget")
+
+        # Verify array metadata exists and belongs to this widget and user
+        array_metadata = ArrayMetadata.objects.get(
+            id=array_id,
+            user=current_user.id,
+            host_widget=widget_id
+        )
+
+        # Get array by ID using enhanced function
+        result = Arrays.get_array_by_name(
+            user_id=current_user.id,
+            host_id=widget_id,
+            host_type="widget",
+            page=page,
+            page_size=page_size,
+            array_id=array_id
+        )
+        
+        if not result["success"]:
+            raise HTTPException(
+                status_code=404, detail=f"Array not found: {result['message']}")
+
+        return {
+            "widget_id": widget_id,
+            "widget_name": widget.name,
+            "widget_type": widget.widget_type,
+            "array_id": array_id,
+            "array_name": array_metadata.name,
+            "elements": [item["value"] for item in result["array"]],
+            "pagination": result["pagination"]
+        }
+        
+    except DoesNotExist:
+        raise HTTPException(status_code=404, detail="Widget or array not found")
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"An unexpected error occurred: {str(e)}"
+        )
+
+@router.put("/{widget_id}/array/id/{array_id}/bulk-update", dependencies=[Depends(verify_device)], status_code=status.HTTP_200_OK)
+async def bulk_update_array_elements_by_array_id(
+    widget_id: str,
+    array_id: str,
+    bulk_data: dict,
+    user_device: tuple = Depends(verify_device)
+):
+    """Bulk update multiple elements in a widget's array using widget ID and array ID."""
+    current_user = user_device[0]
+    try:
+        from models.arrayItem import Arrays, ArrayMetadata
+        
+        # Verify widget exists and user has access
+        widget = Widget_db.objects.get(id=widget_id)
+        
+        if widget.owner != current_user.id and not current_user.admin:
+            raise HTTPException(
+                status_code=403, detail="Not authorized to update this widget")
+
+        # Verify array metadata exists and belongs to this widget and user
+        array_metadata = ArrayMetadata.objects.get(
+            id=array_id,
+            user=current_user.id,
+            host_widget=widget_id
+        )
+
+        # Get the updates from request data
+        updates = bulk_data.get("updates")
+        if not updates or not isinstance(updates, list):
+            raise HTTPException(
+                status_code=400, detail="Updates field with list of updates is required")
+
+        successful_updates = 0
+        failed_updates = []
+
+        # Process each update
+        for update in updates:
+            index = update.get("index")
+            value = update.get("value")
+            
+            if index is None or value is None:
+                failed_updates.append({
+                    "update": update,
+                    "error": "Both index and value are required"
+                })
+                continue
+
+            # Update the element using enhanced function
+            result = Arrays.update_at_index(
+                user_id=current_user.id,
+                host_id=widget_id,
+                index=index,
+                value=value,
+                host_type="widget",
+                array_id=array_id
+            )
+            
+            if result["success"]:
+                successful_updates += 1
+            else:
+                failed_updates.append({
+                    "update": update,
+                    "error": result["message"]
+                })
+
+        return {
+            "message": f"Bulk update completed",
+            "widget_id": widget_id,
+            "widget_name": widget.name,
+            "widget_type": widget.widget_type,
+            "array_id": array_id,
+            "array_name": array_metadata.name,
+            "successful_updates": successful_updates,
+            "failed_updates": len(failed_updates),
+            "failed_details": failed_updates
+        }
+        
+    except DoesNotExist:
+        raise HTTPException(status_code=404, detail="Widget or array not found")
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"An unexpected error occurred: {str(e)}"
+        )
+
+@router.delete("/{widget_id}/array/id/{array_id}/bulk-delete", dependencies=[Depends(verify_device)], status_code=status.HTTP_200_OK)
+async def bulk_delete_array_elements_by_array_id(
+    widget_id: str,
+    array_id: str,
+    bulk_data: dict,
+    user_device: tuple = Depends(verify_device)
+):
+    """Bulk delete multiple elements from a widget's array using widget ID and array ID."""
+    current_user = user_device[0]
+    try:
+        from models.arrayItem import Arrays, ArrayMetadata
+        
+        # Verify widget exists and user has access
+        widget = Widget_db.objects.get(id=widget_id)
+        
+        if widget.owner != current_user.id and not current_user.admin:
+            raise HTTPException(
+                status_code=403, detail="Not authorized to update this widget")
+
+        # Verify array metadata exists and belongs to this widget and user
+        array_metadata = ArrayMetadata.objects.get(
+            id=array_id,
+            user=current_user.id,
+            host_widget=widget_id
+        )
+
+        # Get the indices from request data
+        indices = bulk_data.get("indices")
+        if not indices or not isinstance(indices, list):
+            raise HTTPException(
+                status_code=400, detail="Indices field with list of indices is required")
+
+        # Sort indices in descending order to avoid index shifting issues
+        indices.sort(reverse=True)
+
+        successful_deletions = 0
+        failed_deletions = []
+
+        # Process each deletion
+        for index in indices:
+            if not isinstance(index, int):
+                failed_deletions.append({
+                    "index": index,
+                    "error": "Index must be an integer"
+                })
+                continue
+
+            # Delete the element using enhanced function
+            result = Arrays.remove_at_index(
+                user_id=current_user.id,
+                host_id=widget_id,
+                index=index,
+                host_type="widget",
+                array_id=array_id
+            )
+            
+            if result["success"]:
+                successful_deletions += 1
+            else:
+                failed_deletions.append({
+                    "index": index,
+                    "error": result["message"]
+                })
+
+        return {
+            "message": f"Bulk deletion completed",
+            "widget_id": widget_id,
+            "widget_name": widget.name,
+            "widget_type": widget.widget_type,
+            "array_id": array_id,
+            "array_name": array_metadata.name,
+            "successful_deletions": successful_deletions,
+            "failed_deletions": len(failed_deletions),
+            "failed_details": failed_deletions
+        }
+        
+    except DoesNotExist:
+        raise HTTPException(status_code=404, detail="Widget or array not found")
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"An unexpected error occurred: {str(e)}"
+        )
+
+@router.get("/{widget_id}/array/id/{array_id}/search", dependencies=[Depends(verify_device)], status_code=status.HTTP_200_OK)
+async def search_in_widget_array_by_array_id(
+    widget_id: str,
+    array_id: str,
+    search_value: str = Query(..., description="Value to search for"),
+    user_device: tuple = Depends(verify_device)
+):
+    """Search for a value in a widget's array using widget ID and array ID."""
+    current_user = user_device[0]
+    try:
+        from models.arrayItem import Arrays, ArrayItem_db, ArrayMetadata
+        
+        # Decode the array name from URL
+        decoded_array_name = decode_name_from_url(array_id)
+        
+        # Verify widget exists and user has access
+        widget = Widget_db.objects.get(id=widget_id)
+        
+        if widget.owner != current_user.id and not current_user.admin:
+            raise HTTPException(
+                status_code=403, detail="Not authorized to access this widget")
+
+        # Verify array metadata exists and belongs to this widget and user
+        array_metadata = ArrayMetadata.objects.get(
+            id=array_id,
+            user=current_user.id,
+            host_widget=widget_id
+        )
+
+        # Search for elements containing the search value
+        # For exact match
+        exact_matches = ArrayItem_db.objects(
+            user=current_user.id,
+            array_metadata=array_metadata,
+            value=search_value
+        )
+
+        # For partial matches (if value is string)
+        partial_matches = []
+        if isinstance(search_value, str):
+            # This is a simplified search - you might want to implement more sophisticated search
+            all_elements = ArrayItem_db.objects(
+                user=current_user.id,
+                array_metadata=array_metadata
+            )
+            
+            for element in all_elements:
+                if isinstance(element.value, str) and search_value.lower() in element.value.lower():
+                    if element not in exact_matches:  # Avoid duplicates
+                        partial_matches.append(element)
+
+        exact_results = [{"index": elem.index, "value": elem.value} for elem in exact_matches]
+        partial_results = [{"index": elem.index, "value": elem.value} for elem in partial_matches]
+
+        return {
+            "widget_id": widget_id,
+            "widget_name": widget.name,
+            "array_id": array_id,
+            "array_name": array_metadata.name,
+            "search_value": search_value,
+            "exact_matches": exact_results,
+            "partial_matches": partial_results,
+            "total_matches": len(exact_results) + len(partial_results)
+        }
+        
+    except DoesNotExist:
+        raise HTTPException(status_code=404, detail="Widget or array not found")
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"An unexpected error occurred: {str(e)}"

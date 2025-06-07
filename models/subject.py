@@ -125,6 +125,10 @@ class Subject:
             )
 
             widget.save_to_db()
+            
+            # Create associated arrays for widget types that need them
+            await self._create_widget_arrays(widget, widget_type)
+            
             # Add reference to the widget in the subject
             self.widgets.append(widget.id)
             self.save_to_db()
@@ -132,6 +136,58 @@ class Subject:
         except ValidationError as e:
             print(f"Widget validation error: {e}")
             return None
+
+    async def _create_widget_arrays(self, widget, widget_type):
+        """Create array components for widgets that need them."""
+        from .arrayItem import Arrays
+        
+        if widget_type == "table":
+            # Create columns array
+            columns_result = Arrays.create_array(
+                user_id=self.owner,
+                host_id=widget.id,
+                array_name=f"{widget.name}_columns",
+                host_type="widget",
+                initial_elements=[]
+            )
+            if not columns_result["success"]:
+                raise Exception(f"Failed to create columns array: {columns_result['message']}")
+            
+            # Create rows array
+            rows_result = Arrays.create_array(
+                user_id=self.owner,
+                host_id=widget.id,
+                array_name=f"{widget.name}_rows",
+                host_type="widget",
+                initial_elements=[]
+            )
+            if not rows_result["success"]:
+                raise Exception(f"Failed to create rows array: {rows_result['message']}")
+                
+        elif widget_type == "calendar":
+            # Create events array
+            events_result = Arrays.create_array(
+                user_id=self.owner,
+                host_id=widget.id,
+                array_name=f"{widget.name}_events",
+                host_type="widget",
+                initial_elements=[]
+            )
+            if not events_result["success"]:
+                raise Exception(f"Failed to create events array: {events_result['message']}")
+                
+        elif widget_type == "note":
+            # Create tags array
+            tags_result = Arrays.create_array(
+                user_id=self.owner,
+                host_id=widget.id,
+                array_name=f"{widget.name}_tags",
+                host_type="widget",
+                initial_elements=[]
+            )
+            if not tags_result["success"]:
+                raise Exception(f"Failed to create tags array: {tags_result['message']}")
+                
 
     def get_component(self, comp_id):
         return self.components.get(comp_id)

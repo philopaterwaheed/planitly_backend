@@ -97,7 +97,8 @@ class Widget:
     @staticmethod
     def validate_widget_type(widget_type, reference_component : Component_db=None, data=None):
         """Validates widget type and ensures correct data structure based on type"""
-        # todo : add more types
+        from .arrayItem import Arrays
+        
         valid_self_hosted_types = ["daily_todo", "table", "text_field", "calendar", "note", ]
         valid_component_ref_types = ["check_box", "chart", "text_field", "image","graph"]
 
@@ -110,14 +111,12 @@ class Widget:
                     data["selected_date"] = datetime.utcnow().strftime("%Y-%m-%d")
 
             elif widget_type == "table":
-                # Validate table structure
+                # Validate table structure - columns will be managed as arrays
                 if not data or not isinstance(data, dict):
-                    raise ValidationError("Table widget requires data object")
-                if "columns" not in data:
-                    raise ValidationError(
-                        "Table widget requires columns definition")
-                if "rows" not in data:
-                    data["rows"] = []
+                    data = {}
+                # Remove primitive arrays - will be created as Array components
+                data.pop("columns", None)
+                data.pop("rows", None)
 
             elif widget_type == "text_field":
                 # Initialize text field structure
@@ -125,48 +124,32 @@ class Widget:
                     data = {}
                 if "content" not in data:
                     data["content"] = ""
-                # Optional fields with defaults
                 if "title" not in data:
                     data["title"] = ""
                 if "format" not in data:
-                    data["format"] = "plain"  # Options: plain, markdown, html
+                    data["format"] = "plain"
                 if "editable" not in data:
                     data["editable"] = True
 
             elif widget_type == "calendar":
-                # Validate calendar structure
+                # Validate calendar structure - events will be managed as arrays
                 if not data or not isinstance(data, dict):
                     data = {}
-                if "events" not in data:
-                    data["events"] = []  # List of events
                 if "view" not in data:
-                    data["view"] = "month"  # Options: day, week, month
+                    data["view"] = "month"
+                # Remove primitive events array
+                data.pop("events", None)
 
             elif widget_type == "note":
-                # Validate note structure
+                # Validate note structure - tags will be managed as arrays
                 if not data or not isinstance(data, dict):
                     data = {}
                 if "content" not in data:
                     data["content"] = ""
-                if "tags" not in data:
-                    data["tags"] = []  # List of tags
                 if "pinned" not in data:
-                    data["pinned"] = False  # Default to not pinned
-
-            elif widget_type == "graph":
-                # Validate graph structure
-                if not data or not isinstance(data, dict):
-                    data = {}
-                if "x_axis" not in data:
-                    data["x_axis"] = []  # Default to an empty list for x-axis
-                if "y_axis" not in data:
-                    data["y_axis"] = []  # Default to an empty list for y-axis
-                if not all(isinstance(i, int) for i in data["x_axis"]):
-                    raise ValidationError("x_axis must be an array of integers")
-                if not all(isinstance(i, int) for i in data["y_axis"]):
-                    raise ValidationError("y_axis must be an array of integers")
-                if "title" not in data:
-                    data["title"] = ""  # Optional title for the graph
+                    data["pinned"] = False
+                # Remove primitive tags array
+                data.pop("tags", None)
 
             return data
 
