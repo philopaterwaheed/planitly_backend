@@ -4,6 +4,7 @@ from middleWares import verify_device, admin_required
 from models import  Subject, Category_db
 from mongoengine.queryset.visitor import Q
 from mongoengine.errors import DoesNotExist, ValidationError , NotUniqueError
+import datetime
 
 router = APIRouter(prefix="/subjects", tags=["Subjects"])
 
@@ -232,7 +233,7 @@ async def delete_subject(subject_id: str, user_device: tuple =Depends(verify_dev
 
 @router.get("/{subject_id}/full-data", status_code=status.HTTP_200_OK, dependencies=[Depends(verify_device)])
 async def get_subject_full_data(subject_id: str, user_device: tuple = Depends(verify_device)):
-    """Retrieve all data inside a subject, including its components and widgets."""
+    """Retrieve all data inside a subject, including its components and widgets, and record the visit."""
     current_user = user_device[0]
     try:
         # Fetch the subject
@@ -246,12 +247,197 @@ async def get_subject_full_data(subject_id: str, user_device: tuple = Depends(ve
                 status_code=403, detail="Not authorized to access this subject"
             )
 
+        # Convert to Subject instance to use the increment method and get full data
         subject = Subject.from_db(subject_db)
+        
+        # Record the visit (increment visit count with decay mechanism)
+        subject.increment_visit_count()
+        
+        # Update the database with visit data
+        subject_db.update(
+            times_visited=subject.times_visited,
+            last_visited=subject.last_visited
+        )
+        
+        # Get the full data
         full_data = await subject.get_full_data()
+        
+        # Add visit information to the response
+        full_data["visit_info"] = {
+            "times_visited": subject.times_visited.get('count', 0) if isinstance(subject.times_visited, dict) else 0,
+            "last_visited": subject.last_visited.isoformat() if subject.last_visited else None,
+            "visit_recorded": True
+        }
+        
         return full_data
 
     except DoesNotExist:
         raise HTTPException(status_code=404, detail="Subject not found")
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"An unexpected error occurred: {str(e)}"
+        )
+
+
+@router.get("/most-visited", status_code=status.HTTP_200_OK)
+async def get_most_visited_subjects(
+    user_device: tuple = Depends(verify_device),
+    skip: int = 0,
+    limit: int = 20
+):
+    """Get user's most visited subjects with database-side decay calculation."""
+    MAX_LIMIT = 50
+    current_user = user_device[0]
+    try:
+        if limit > MAX_LIMIT:
+            limit = MAX_LIMIT
+
+        # Database-side decay update using aggregation pipeline
+        now = datetime.datetime.utcnow()
+        seven_days_ago = now - datetime.timedelta(days=7)
+        
+        # Aggregation pipeline to apply decay and update records
+        decay_pipeline = [
+            # Match user's subjects that need decay (older than 7 days)
+            {
+                "$match": {
+                    "owner": current_user.id,
+                    "times_visited.last_decay": {"$lt": seven_days_ago}
+                }
+            },
+            # Add calculated fields for decay
+            {
+                "$addFields": {
+                    "days_since_decay": {
+                        "$divide": [
+                            {"$subtract": [now, "$times_visited.last_decay"]},
+                            1000 * 60 * 60 * 24  # Convert milliseconds to days
+                        ]
+                    }
+                }
+            },
+            {
+                "$addFields": {
+                    "weeks_since_decay": {
+                        "$floor": {"$divide": ["$days_since_decay", 7]}
+                    }
+                }
+            },
+            # Apply exponential decay (0.9^weeks)
+            {
+                "$addFields": {
+                    "decay_factor": {
+                        "$pow": [0.9, "$weeks_since_decay"]
+                    }
+                }
+            },
+            {
+                "$addFields": {
+                    "times_visited.count": {
+                        "$floor": {
+                            "$multiply": ["$times_visited.count", "$decay_factor"]
+                        }
+                    },
+                    "times_visited.last_decay": now
+                }
+            },
+            # Remove temporary fields
+            {
+                "$unset": ["days_since_decay", "weeks_since_decay", "decay_factor"]
+            },
+            # Merge back to collection (update in place)
+            {
+                "$merge": {
+                    "into": "subjects",
+                    "whenMatched": "replace"
+                }
+            }
+        ]
+        
+        # Execute decay update
+        decay_result = list(Subject_db._get_collection().aggregate(decay_pipeline))
+        updated_count = len(decay_result) if decay_result else 0
+
+        # Now query the updated data with sorting
+        query = Subject_db.objects(owner=current_user.id).order_by('-times_visited.count', '-last_visited')
+        total = query.count()
+        subjects = query.skip(skip).limit(limit)
+        
+        # Convert to response format
+        subjects_data = []
+        for subject_db in subjects:
+            subject_dict = subject_db.to_mongo().to_dict()
+            # Ensure visit count is properly formatted
+            times_visited = subject_dict.get('times_visited', {})
+            if isinstance(times_visited, dict):
+                subject_dict['times_visited'] = times_visited.get('count', 0)
+            else:
+                subject_dict['times_visited'] = 0
+            subjects_data.append(subject_dict)
+
+        return {
+            "total": total,
+            "subjects": subjects_data,
+            "decay_updates_applied": updated_count
+        }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"An unexpected error occurred: {str(e)}"
+        )
+
+
+@router.get("/visit-stats", status_code=status.HTTP_200_OK)
+async def get_visit_statistics(user_device: tuple = Depends(verify_device)):
+    """Get visit statistics for the current user's subjects."""
+    current_user = user_device[0]
+    try:
+        subjects = Subject_db.objects(owner=current_user.id)
+        
+        total_subjects = subjects.count()
+        total_visits = 0
+        most_visited = None
+        most_visited_count = 0
+        recently_visited = []
+        
+        for subject in subjects:
+            visit_count = 0
+            if isinstance(subject.times_visited, dict):
+                visit_count = subject.times_visited.get('count', 0)
+            
+            total_visits += visit_count
+            
+            # Track most visited
+            if visit_count > most_visited_count:
+                most_visited_count = visit_count
+                most_visited = {
+                    "id": subject.id,
+                    "name": subject.name,
+                    "visit_count": visit_count
+                }
+            
+            # Track recently visited (last 7 days)
+            if subject.last_visited:
+                days_ago = (datetime.datetime.utcnow() - subject.last_visited).days
+                if days_ago <= 7:
+                    recently_visited.append({
+                        "id": subject.id,
+                        "name": subject.name,
+                        "last_visited": subject.last_visited.isoformat(),
+                        "days_ago": days_ago
+                    })
+        
+        # Sort recently visited by last_visited date
+        recently_visited.sort(key=lambda x: x['last_visited'], reverse=True)
+        
+        return {
+            "total_subjects": total_subjects,
+            "total_visits": total_visits,
+            "average_visits": round(total_visits / total_subjects, 2) if total_subjects > 0 else 0,
+            "most_visited": most_visited,
+            "recently_visited": recently_visited[:10]  # Top 10 recently visited
+        }
+
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"An unexpected error occurred: {str(e)}"
