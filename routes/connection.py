@@ -135,15 +135,15 @@ async def delete_connection(connection_id: str, user_device: tuple = Depends(ver
     try:
         connection = Connection_db.objects.get(id=connection_id)
         if str(current_user.id) == str(connection.owner) or current_user.admin:
-            source_subject = Subject_db.objects.get(
-                id=connection.source_subject.id)
-            target_subject = Subject_db.objects.get(
-                id=connection.target_subject.id)
+            # Get data transfer IDs for bulk deletion
+            data_transfer_ids = [dt.id for dt in connection.data_transfers if dt]
+            
+            # Bulk delete all associated data transfers
+            if data_transfer_ids:
+                deleted_dt_count = DataTransfer_db.objects(id__in=data_transfer_ids).delete()
+                print(f"Deleted {deleted_dt_count} data transfers for connection {connection_id}")
 
-            # let me see if we need to keep them
-            """ source_subject.update(pull__connections=connection_id) """
-            """ target_subject.update(pull__connections=connection_id) """
-
+            # Delete the connection
             connection.delete()
             return {"message": "Connection deleted successfully", "id": connection_id}
 
@@ -153,6 +153,49 @@ async def delete_connection(connection_id: str, user_device: tuple = Depends(ver
     except DoesNotExist:
         raise HTTPException(
             status_code=404, detail="Connection or Subject not found")
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"An unexpected error occurred: {str(e)}")
+
+# Add bulk deletion route for multiple connections
+@router.delete("/bulk", dependencies=[Depends(verify_device)], status_code=status.HTTP_200_OK)
+async def bulk_delete_connections(data: dict, user_device: tuple = Depends(verify_device)):
+    """Bulk delete multiple connections and their data transfers."""
+    current_user = user_device[0]
+    try:
+        connection_ids = data.get("connection_ids", [])
+        if not connection_ids:
+            raise HTTPException(status_code=400, detail="No connection IDs provided")
+
+        # Get all connections and verify ownership
+        connections = Connection_db.objects(id__in=connection_ids)
+        authorized_ids = []
+        all_data_transfer_ids = []
+        
+        for connection in connections:
+            if str(current_user.id) == str(connection.owner) or current_user.admin:
+                authorized_ids.append(connection.id)
+                # Collect data transfer IDs
+                dt_ids = [dt.id for dt in connection.data_transfers if dt]
+                all_data_transfer_ids.extend(dt_ids)
+
+        if not authorized_ids:
+            raise HTTPException(status_code=403, detail="Not authorized to delete any of these connections")
+
+        # Bulk delete data transfers first
+        dt_deleted_count = 0
+        if all_data_transfer_ids:
+            dt_deleted_count = DataTransfer_db.objects(id__in=all_data_transfer_ids).delete()
+
+        # Bulk delete connections
+        conn_deleted_count = Connection_db.objects(id__in=authorized_ids).delete()
+        
+        return {
+            "message": f"Successfully deleted {conn_deleted_count} connections and {dt_deleted_count} data transfers",
+            "connections_deleted": conn_deleted_count,
+            "data_transfers_deleted": dt_deleted_count,
+            "requested_count": len(connection_ids)
+        }
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"An unexpected error occurred: {str(e)}")

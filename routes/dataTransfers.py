@@ -113,19 +113,57 @@ async def get_all_data_transfers(user_device: tuple =Depends(verify_device)):
 
 
 @router.delete("/{transfer_id}", dependencies=[Depends(verify_device)], status_code=status.HTTP_200_OK)
-async def delete_data_transfer(transfer_id: str, user_device: tuple =Depends(verify_device)):
+async def delete_data_transfer(transfer_id: str, user_device: tuple = Depends(verify_device)):
     """Delete a data transfer."""
     current_user = user_device[0]
     try:
         data_transfer = DataTransfer_db.objects.get(id=transfer_id)
+        
+        # Check authorization
         if (current_user.id != data_transfer.source_component.owner and
-                current_user.id != data_transfer.target_component.owner) or not current_user.admin:
+                current_user.id != data_transfer.target_component.owner) and not current_user.admin:
             raise HTTPException(
                 status_code=403, detail="Not authorized to delete this data transfer")
+        
         data_transfer.delete()
         return {"message": "Data transfer deleted successfully", "id": transfer_id}
     except DoesNotExist:
         raise HTTPException(status_code=404, detail="Data transfer not found")
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"An unexpected error occurred: {str(e)}")
+
+# Add bulk deletion route for multiple data transfers
+@router.delete("/bulk", dependencies=[Depends(verify_device)], status_code=status.HTTP_200_OK)
+async def bulk_delete_data_transfers(data: dict, user_device: tuple = Depends(verify_device)):
+    """Bulk delete multiple data transfers."""
+    current_user = user_device[0]
+    try:
+        transfer_ids = data.get("transfer_ids", [])
+        if not transfer_ids:
+            raise HTTPException(status_code=400, detail="No transfer IDs provided")
+
+        # Get all transfers and verify ownership
+        transfers = DataTransfer_db.objects(id__in=transfer_ids)
+        authorized_ids = []
+        
+        for transfer in transfers:
+            if (current_user.id == transfer.source_component.owner or
+                current_user.id == transfer.target_component.owner or 
+                current_user.admin):
+                authorized_ids.append(transfer.id)
+
+        if not authorized_ids:
+            raise HTTPException(status_code=403, detail="Not authorized to delete any of these transfers")
+
+        # Bulk delete
+        deleted_count = DataTransfer_db.objects(id__in=authorized_ids).delete()
+        
+        return {
+            "message": f"Successfully deleted {deleted_count} data transfers",
+            "deleted_count": deleted_count,
+            "requested_count": len(transfer_ids)
+        }
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"An unexpected error occurred: {str(e)}")

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from models import Subject_db
 from middleWares import verify_device, admin_required
-from models import  Subject, Category_db
+from models import  Subject, Category_db ,Widget_db, Component_db
 from mongoengine.queryset.visitor import Q
 from mongoengine.errors import DoesNotExist, ValidationError , NotUniqueError
 import datetime
@@ -200,28 +200,34 @@ async def remove_subject_category(subject_id: str, user_device: tuple = Depends(
 
 
 @router.delete("/{subject_id}", status_code=status.HTTP_200_OK)
-async def delete_subject(subject_id: str, user_device: tuple =Depends(verify_device)):
-    """Delete a subject and its associated components."""
+async def delete_subject(subject_id: str, user_device: tuple = Depends(verify_device)):
     current_user = user_device[0]
     try:
         subject = Subject_db.objects.get(id=subject_id)
-        # Check if subject exists
-        if not subject:
-            raise HTTPException(
-                status_code=404, detail="Subject not found")
-
-        # Check if subject is deletable
+        
         if not subject.is_deletable:
             raise HTTPException(
                 status_code=403, detail="This subject cannot be deleted")
 
         if str(current_user.id) == str(subject.owner) or current_user.admin:
-            for widget in subject.widgets:
-                widget.delete()
-            for comp in subject.components:
-                comp.delete()
+            # Get all component and widget IDs for bulk deletion
+            component_ids = [comp.id for comp in subject.components]
+            widget_ids = [widget.id for widget in subject.widgets]
+            
+            # Bulk delete components
+            if component_ids:
+                Component_db.objects(id__in=component_ids).delete()
+            
+            # Bulk delete widgets
+            if widget_ids:
+                Widget_db.objects(id__in=widget_ids).delete()
+            
+            # Delete the subject
             subject.delete()
-            return {"message": f"Subject and associated components and widgets with ID {subject_id} deleted successfully."}
+            
+            return {
+                "message": f"Subject with ID {subject_id} and {len(component_ids)} components and {len(widget_ids)} widgets deleted successfully."
+            }
         else:
             raise HTTPException(
                 status_code=403, detail="Not authorized to delete this subject")

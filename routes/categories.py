@@ -100,18 +100,17 @@ async def delete_category(category_name: str, user_device: tuple = Depends(verif
         if not category:
             raise HTTPException(status_code=404, detail=f"Category '{decoded_category_name}' not found.")
 
-        # Find all subjects in the category
-        subjects_in_category = Subject_db.objects(category=decoded_category_name, owner=current_user.id)
-
-        # Update all subjects to "Uncategorized"
-        for subject in subjects_in_category:
-            subject.update(category="Uncategorized")
+        # Bulk update all subjects in the category to "Uncategorized"
+        update_result = Subject_db.objects(
+            category=decoded_category_name, 
+            owner=current_user.id
+        ).update(category="Uncategorized")
 
         # Delete the category
         category.delete()
 
         return {
-            "message": f"Category '{decoded_category_name}' deleted, and all associated subjects have been set to 'Uncategorized'."
+            "message": f"Category '{decoded_category_name}' deleted, and {update_result} associated subjects have been set to 'Uncategorized'."
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")

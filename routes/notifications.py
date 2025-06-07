@@ -114,15 +114,70 @@ async def delete_notification(notification_id: str, user_device: tuple = Depends
             raise HTTPException(
                 status_code=403, detail="Not authorized to delete this notification"
             )
-        count_obj, _ = NotificationCount.objects.get_or_create(
-            user_id=current_user.id)
+
+        notification.delete()
+        
+        # Update notification count
+        count_obj, _ = NotificationCount.objects.get_or_create(user_id=current_user.id)
         count_obj.count = str(int(count_obj.count) + 1)
         count_obj.save()
 
-        notification.delete()
         return {"message": "Notification deleted successfully"}
     except DoesNotExist:
         raise HTTPException(status_code=404, detail="Notification not found")
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"An unexpected error occurred: {str(e)}")
+
+
+@router.delete("/bulk", dependencies=[Depends(verify_device)], status_code=status.HTTP_200_OK)
+async def bulk_delete_notifications(data: dict, user_device: tuple = Depends(verify_device)):
+    """Bulk delete multiple notifications."""
+    current_user = user_device[0]
+    try:
+        notification_ids = data.get("notification_ids", [])
+        if not notification_ids:
+            raise HTTPException(status_code=400, detail="No notification IDs provided")
+
+        # Bulk delete notifications for this user
+        deleted_count = Notification_db.objects(
+            id__in=notification_ids,
+            user_id=str(current_user.id)
+        ).delete()
+
+        if deleted_count > 0:
+            # Update notification count
+            count_obj, _ = NotificationCount.objects.get_or_create(user_id=current_user.id)
+            count_obj.count = str(int(count_obj.count) + deleted_count)
+            count_obj.save()
+
+        return {
+            "message": f"Successfully deleted {deleted_count} notifications",
+            "deleted_count": deleted_count,
+            "requested_count": len(notification_ids)
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"An unexpected error occurred: {str(e)}")
+
+
+@router.delete("/clear-all", dependencies=[Depends(verify_device)], status_code=status.HTTP_200_OK)
+async def clear_all_notifications(user_device: tuple = Depends(verify_device)):
+    """Clear all notifications for the current user."""
+    current_user = user_device[0]
+    try:
+        deleted_count = Notification_db.objects(user_id=str(current_user.id)).delete()
+        
+        if deleted_count > 0:
+            # Reset notification count
+            count_obj, _ = NotificationCount.objects.get_or_create(user_id=current_user.id)
+            count_obj.count = "0"
+            count_obj.save()
+
+        return {
+            "message": f"Cleared all {deleted_count} notifications",
+            "deleted_count": deleted_count
+        }
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"An unexpected error occurred: {str(e)}")
