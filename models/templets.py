@@ -39,7 +39,25 @@ DEFAULT_USER_TEMPLATES = {
             {
                 "name": "habits",
                 "type": "Array_type",
-                "data": {"type": "str"},  # Specify the type of items in the array
+                "data": {"type": "str"},  # Array of habit subject IDs
+                "is_deletable": False
+            },
+            {
+                "name": "daily_status",
+                "type": "Array_of_pairs",
+                "data": {"type": {"key": "str", "value": "bool"}},  # habit_id: completion_status
+                "is_deletable": False
+            },
+            {
+                "name": "current_date",
+                "type": "str",
+                "data": {"item": datetime.datetime.now().strftime("%Y-%m-%d")},
+                "is_deletable": False
+            },
+            {
+                "name": "last_updated",
+                "type": "date",
+                "data": {"item": datetime.datetime.now()},
                 "is_deletable": False
             }
         ],
