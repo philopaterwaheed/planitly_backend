@@ -827,3 +827,114 @@ async def get_photo_widget(widget_id: str, user_device: tuple = Depends(verify_d
         raise HTTPException(status_code=404, detail="Widget not found")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
+
+
+@router.put("/{widget_id}/daily-todo/mark-all-done", dependencies=[Depends(verify_device)], status_code=status.HTTP_200_OK)
+async def mark_all_todos_done_for_date(
+    widget_id: str,
+    data: dict,
+    user_device: tuple = Depends(verify_device)
+):
+    """Mark all todos as done for a specific date."""
+    current_user = user_device[0]
+    try:
+        widget = Widget_db.objects.get(id=widget_id)
+
+        if widget.owner != current_user.id and not current_user.admin:
+            raise HTTPException(
+                status_code=403, detail="Not authorized to update this widget")
+
+        if widget.type != "daily_todo":
+            raise HTTPException(
+                status_code=400, detail="This endpoint is only for daily_todo widgets")
+
+        # Get the date
+        date_str = data.get("date")
+        if not date_str:
+            raise HTTPException(status_code=400, detail="Date is required")
+
+        try:
+            target_date = datetime.strptime(date_str, "%Y-%m-%d")
+        except ValueError:
+            raise HTTPException(
+                status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+
+        # Get all todos for this date
+        todos = Todo_db.objects(widget_id=widget_id, date=target_date)
+
+        # Mark all as completed
+        completed_count = 0
+        for todo in todos:
+            if not todo.completed:
+                todo.completed = True
+                todo.save()
+                completed_count += 1
+
+        return {
+            "message": f"All todos marked as done for {date_str}",
+            "date": date_str,
+            "todos_completed": completed_count,
+            "total_todos": len(todos)
+        }
+
+    except DoesNotExist:
+        raise HTTPException(status_code=404, detail="Widget not found")
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"An unexpected error occurred: {str(e)}"
+        )
+
+@router.put("/{widget_id}/daily-todo/mark-all-undone", dependencies=[Depends(verify_device)], status_code=status.HTTP_200_OK)
+async def mark_all_todos_undone_for_date(
+    widget_id: str,
+    data: dict,
+    user_device: tuple = Depends(verify_device)
+):
+    """Mark all todos as undone for a specific date."""
+    current_user = user_device[0]
+    try:
+        widget = Widget_db.objects.get(id=widget_id)
+
+        if widget.owner != current_user.id and not current_user.admin:
+            raise HTTPException(
+                status_code=403, detail="Not authorized to update this widget")
+
+        if widget.type != "daily_todo":
+            raise HTTPException(
+                status_code=400, detail="This endpoint is only for daily_todo widgets")
+
+        # Get the date
+        date_str = data.get("date")
+        if not date_str:
+            raise HTTPException(status_code=400, detail="Date is required")
+
+        try:
+            target_date = datetime.strptime(date_str, "%Y-%m-%d")
+        except ValueError:
+            raise HTTPException(
+                status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+
+        # Get all todos for this date
+        todos = Todo_db.objects(widget_id=widget_id, date=target_date)
+
+        # Mark all as incomplete
+        uncompleted_count = 0
+        for todo in todos:
+            if todo.completed:
+                todo.completed = False
+                todo.save()
+                uncompleted_count += 1
+
+        return {
+            "message": f"All todos marked as undone for {date_str}",
+            "date": date_str,
+            "todos_uncompleted": uncompleted_count,
+            "total_todos": len(todos)
+        }
+
+    except DoesNotExist:
+        raise HTTPException(status_code=404, detail="Widget not found")
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"An unexpected error occurred: {str(e)}"
+        )

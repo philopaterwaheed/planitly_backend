@@ -18,6 +18,7 @@ async def create_data_transfer(data: dict, user_device: tuple = Depends(verify_d
         data_id = data.get('id', str(uuid.uuid4()))
         source_component_id = data.get('source_component') or 1
         target_component_id = data.get('target_component') or 1
+        operation = data.get('operation', 'replace')
 
         if not target_component_id:
             raise HTTPException(  # Check if the target component is provided
@@ -56,7 +57,7 @@ async def create_data_transfer(data: dict, user_device: tuple = Depends(verify_d
             source_component=source_component.id if source_component else None,
             target_component=target_component.id,
             data_value=data.get("data_value"),
-            operation=data.get("operation"),
+            operation=operation,
             schedule_time=schedule_time,
             details=data.get("details") or {},
             owner = current_user.id

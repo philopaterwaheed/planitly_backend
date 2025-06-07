@@ -442,3 +442,319 @@ async def get_visit_statistics(user_device: tuple = Depends(verify_device)):
         raise HTTPException(
             status_code=500, detail=f"An unexpected error occurred: {str(e)}"
         )
+
+
+@router.get("/habits", status_code=status.HTTP_200_OK)
+async def get_user_habit_subjects(
+    user_device: tuple = Depends(verify_device),
+    skip: int = 0,
+    limit: int = 20
+):
+    """Get user's habit subjects that can be added to Habit Tracker."""
+    MAX_LIMIT = 50
+    current_user = user_device[0]
+    try:
+        if limit > MAX_LIMIT:
+            limit = MAX_LIMIT
+
+        # Query subjects with "habit" template
+        query = Subject_db.objects(owner=current_user.id, template="habit").order_by('-created_at')
+        total = query.count()
+        subjects = query.skip(skip).limit(limit)
+        
+        # Convert to response format
+        subjects_data = []
+        for subject_db in subjects:
+            subject_dict = subject_db.to_mongo().to_dict()
+            subjects_data.append({
+                "id": subject_dict["id"],
+                "name": subject_dict["name"],
+                "created_at": subject_dict.get("created_at"),
+                "template": subject_dict["template"],
+                "category": subject_dict.get("category", "Uncategorized")
+            })
+
+        return {
+            "total": total,
+            "habits": subjects_data
+        }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"An unexpected error occurred: {str(e)}"
+        )
+
+
+@router.put("/{subject_id}/habit/mark-done", status_code=status.HTTP_200_OK)
+async def mark_habit_done_for_day(
+    subject_id: str, 
+    data: dict, 
+    user_device: tuple = Depends(verify_device)
+):
+    """Mark a habit subject as done for a specific day and complete all its daily todos."""
+    current_user = user_device[0]
+    try:
+        # Validate input
+        date_str = data.get("date")
+        if not date_str:
+            raise HTTPException(status_code=400, detail="Date is required")
+        
+        try:
+            target_date = datetime.datetime.strptime(date_str, "%Y-%m-%d")
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+
+        # Fetch the subject
+        subject_db = Subject_db.objects.get(id=subject_id)
+        if not subject_db:
+            raise HTTPException(status_code=404, detail="Subject not found")
+
+        # Check authorization
+        if str(current_user.id) != str(subject_db.owner) and not current_user.admin:
+            raise HTTPException(
+                status_code=403, detail="Not authorized to update this subject"
+            )
+
+        # Verify this is a habit subject
+        if subject_db.template != "habit":
+            raise HTTPException(
+                status_code=400, detail="This endpoint is only for habit subjects"
+            )
+
+        # Find the daily_todo widget in this habit subject
+        daily_todo_widget = None
+        for widget in subject_db.widgets:
+            if widget.type == "daily_todo":
+                daily_todo_widget = widget
+                break
+        
+        if not daily_todo_widget:
+            raise HTTPException(
+                status_code=404, detail="No daily todo widget found in this habit subject"
+            )
+
+        # Import Todo_db here to avoid circular imports
+        from models.todos import Todo_db
+
+        # Get all todos for this widget and date
+        todos = Todo_db.objects(
+            widget_id=daily_todo_widget.id,
+            date=target_date
+        )
+
+        # Mark all todos as completed
+        completed_count = 0
+        for todo in todos:
+            if not todo.completed:
+                todo.completed = True
+                todo.save()
+                completed_count += 1
+
+        return {
+            "message": f"Habit marked as done for {date_str}",
+            "subject_id": subject_id,
+            "subject_name": subject_db.name,
+            "date": date_str,
+            "todos_completed": completed_count,
+            "total_todos": len(todos)
+        }
+
+    except DoesNotExist:
+        raise HTTPException(status_code=404, detail="Subject not found")
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"An unexpected error occurred: {str(e)}"
+        )
+
+
+@router.put("/{subject_id}/habit/mark-undone", status_code=status.HTTP_200_OK)
+async def mark_habit_undone_for_day(
+    subject_id: str, 
+    data: dict, 
+    user_device: tuple = Depends(verify_device)
+):
+    """Mark a habit subject as undone for a specific day and mark all its daily todos as incomplete."""
+    current_user = user_device[0]
+    try:
+        # Validate input
+        date_str = data.get("date")
+        if not date_str:
+            raise HTTPException(status_code=400, detail="Date is required")
+        
+        try:
+            target_date = datetime.datetime.strptime(date_str, "%Y-%m-%d")
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+
+        # Fetch the subject
+        subject_db = Subject_db.objects.get(id=subject_id)
+        if not subject_db:
+            raise HTTPException(status_code=404, detail="Subject not found")
+
+        # Check authorization
+        if str(current_user.id) != str(subject_db.owner) and not current_user.admin:
+            raise HTTPException(
+                status_code=403, detail="Not authorized to update this subject"
+            )
+
+        # Verify this is a habit subject
+        if subject_db.template != "habit":
+            raise HTTPException(
+                status_code=400, detail="This endpoint is only for habit subjects"
+            )
+
+        # Find the daily_todo widget in this habit subject
+        daily_todo_widget = None
+        for widget in subject_db.widgets:
+            if widget.type == "daily_todo":
+                daily_todo_widget = widget
+                break
+        
+        if not daily_todo_widget:
+            raise HTTPException(
+                status_code=404, detail="No daily todo widget found in this habit subject"
+            )
+
+        # Import Todo_db here to avoid circular imports
+        from models.todos import Todo_db
+
+        # Get all todos for this widget and date
+        todos = Todo_db.objects(
+            widget_id=daily_todo_widget.id,
+            date=target_date
+        )
+
+        # Mark all todos as incomplete
+        uncompleted_count = 0
+        for todo in todos:
+            if todo.completed:
+                todo.completed = False
+                todo.save()
+                uncompleted_count += 1
+
+        return {
+            "message": f"Habit marked as undone for {date_str}",
+            "subject_id": subject_id,
+            "subject_name": subject_db.name,
+            "date": date_str,
+            "todos_uncompleted": uncompleted_count,
+            "total_todos": len(todos)
+        }
+
+    except DoesNotExist:
+        raise HTTPException(status_code=404, detail="Subject not found")
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"An unexpected error occurred: {str(e)}"
+        )
+
+
+@router.get("/{subject_id}/habit/status", status_code=status.HTTP_200_OK)
+async def get_habit_status(
+    subject_id: str,
+    start_date: str,
+    end_date: str,
+    user_device: tuple = Depends(verify_device)
+):
+    """Get habit completion status for a date range."""
+    current_user = user_device[0]
+    try:
+        # Validate dates
+        try:
+            start = datetime.datetime.strptime(start_date, "%Y-%m-%d")
+            end = datetime.datetime.strptime(end_date, "%Y-%m-%d")
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+
+        # Fetch the subject
+        subject_db = Subject_db.objects.get(id=subject_id)
+        if not subject_db:
+            raise HTTPException(status_code=404, detail="Subject not found")
+
+        # Check authorization
+        if str(current_user.id) != str(subject_db.owner) and not current_user.admin:
+            raise HTTPException(
+                status_code=403, detail="Not authorized to access this subject"
+            )
+
+        # Verify this is a habit subject
+        if subject_db.template != "habit":
+            raise HTTPException(
+                status_code=400, detail="This endpoint is only for habit subjects"
+            )
+
+        # Find the daily_todo widget
+        daily_todo_widget = None
+        for widget in subject_db.widgets:
+            if widget.type == "daily_todo":
+                daily_todo_widget = widget
+                break
+        
+        if not daily_todo_widget:
+            return {
+                "subject_id": subject_id,
+                "subject_name": subject_db.name,
+                "start_date": start_date,
+                "end_date": end_date,
+                "status_by_date": {},
+                "completion_rate": 0.0
+            }
+
+        # Import Todo_db here to avoid circular imports
+        from models.todos import Todo_db
+
+        # Get all todos in the date range
+        end_of_day = end + datetime.timedelta(days=1) - datetime.timedelta(seconds=1)
+        todos = Todo_db.objects(
+            widget_id=daily_todo_widget.id,
+            date__gte=start,
+            date__lte=end_of_day
+        ).order_by('date')
+
+        # Group todos by date and calculate completion status
+        status_by_date = {}
+        current_date = start
+        while current_date <= end:
+            date_str = current_date.strftime("%Y-%m-%d")
+            date_todos = [todo for todo in todos if todo.date.strftime("%Y-%m-%d") == date_str]
+            
+            if date_todos:
+                completed_todos = [todo for todo in date_todos if todo.completed]
+                status_by_date[date_str] = {
+                    "completed": len(completed_todos),
+                    "total": len(date_todos),
+                    "completion_rate": len(completed_todos) / len(date_todos),
+                    "is_complete": len(completed_todos) == len(date_todos) and len(date_todos) > 0
+                }
+            else:
+                status_by_date[date_str] = {
+                    "completed": 0,
+                    "total": 0,
+                    "completion_rate": 0.0,
+                    "is_complete": False
+                }
+            
+            current_date += datetime.timedelta(days=1)
+
+        # Calculate overall completion rate
+        total_days = len(status_by_date)
+        completed_days = sum(1 for status in status_by_date.values() if status["is_complete"])
+        overall_completion_rate = completed_days / total_days if total_days > 0 else 0.0
+
+        return {
+            "subject_id": subject_id,
+            "subject_name": subject_db.name,
+            "start_date": start_date,
+            "end_date": end_date,
+            "status_by_date": status_by_date,
+            "completion_rate": round(overall_completion_rate, 2),
+            "completed_days": completed_days,
+            "total_days": total_days
+        }
+
+    except DoesNotExist:
+        raise HTTPException(status_code=404, detail="Subject not found")
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"An unexpected error occurred: {str(e)}"
+        )

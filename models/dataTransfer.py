@@ -93,72 +93,9 @@ class DataTransfer:
             print(f"Operation '{self.operation}' not supported for component type '{target_component.comp_type}'.")
             return
 
-        # Special validation for Financial Tracker Income/Expenses components
-        if (target_component.comp_type == "Array_of_pairs" and 
-            hasattr(target_component, 'name') and 
-            target_component.name in ["Income", "Expenses"]):
-            
-            # Check if this is the Financial Tracker template (should have string types)
-            component_type_spec = target_component.data.get("type", {})
-            if (isinstance(component_type_spec, dict) and 
-                component_type_spec.get("key") == "str" and 
-                component_type_spec.get("value") == "str"):
-                
-                # Validate data for Financial Tracker components
-                if self.operation in ["append", "push_at", "update_pair"] and hasattr(self, 'data_value') and self.data_value:
-                    if self.operation == "append":
-                        # For append: data_value = {"item": {"key": str, "value": str}}
-                        if (not isinstance(self.data_value, dict) or 
-                            "item" not in self.data_value or 
-                            not isinstance(self.data_value["item"], dict)):
-                            print("Invalid data_value structure for Financial Tracker append. Expected {'item': {'key': str, 'value': str}}")
-                            return
-                        
-                        pair = self.data_value["item"]
-                        if "key" not in pair or "value" not in pair:
-                            print("Invalid pair structure for Financial Tracker. Expected {'key': str, 'value': str}")
-                            return
-                        
-                        if not isinstance(pair["key"], str) or not isinstance(pair["value"], str):
-                            print("Both key and value must be strings for Financial Tracker Income/Expenses")
-                            return
-                        
-                        # Validate Financial Tracker format: "double;date"
-                        value = pair["value"]
-                        if not self._validate_financial_tracker_format(value):
-                            print(f"Invalid format for Financial Tracker value. Expected 'double;date' format, got: {value}")
-                            return
-                    
-                    elif self.operation in ["push_at", "update_pair"]:
-                        # For push_at/update_pair: data_value = {"item": {"key": str, "value": str}, "index": int}
-                        if (not isinstance(self.data_value, dict) or 
-                            "item" not in self.data_value or 
-                            "index" not in self.data_value):
-                            print(f"Invalid data_value structure for Financial Tracker {self.operation}. Expected {{'item': {{'key': str, 'value': str}}, 'index': int}}")
-                            return
-                        
-                        pair = self.data_value["item"]
-                        index = self.data_value["index"]
-                        
-                        if not isinstance(index, int):
-                            print("Index must be an integer for Financial Tracker operations")
-                            return
-                        
-                        if (not isinstance(pair, dict) or 
-                            "key" not in pair or 
-                            "value" not in pair):
-                            print("Invalid pair structure for Financial Tracker. Expected {'key': str, 'value': str}")
-                            return
-                        
-                        if not isinstance(pair["key"], str) or not isinstance(pair["value"], str):
-                            print("Both key and value must be strings for Financial Tracker Income/Expenses")
-                            return
-                        
-                        # Validate Financial Tracker format: "double;date"
-                        value = pair["value"]
-                        if not self._validate_financial_tracker_format(value):
-                            print(f"Invalid format for Financial Tracker value. Expected 'double;date' format, got: {value}")
-                            return
+        # Apply special validations based on component type and name
+        if not self._apply_special_validations(target_component):
+            return
 
         # Type check data_value if it's being used
         if not source_component and self.operation not in ["remove_back", "remove_front", "toggle"]:
@@ -207,6 +144,169 @@ class DataTransfer:
         else:
             return self._execute_scalar_operation(target_component, source_value)
 
+    def _apply_special_validations(self, target_component):
+        """Apply special validations for specific component types and templates."""
+        # Financial Tracker validation
+        if not self._validate_financial_tracker_component(target_component):
+            return False
+        
+        # Habit Tracker validation
+        if not self._validate_habit_tracker_component(target_component):
+            return False
+        
+        # Add more special validations here as needed
+        return True
+
+    def _validate_financial_tracker_component(self, target_component):
+        """Special validation for Financial Tracker Income/Expenses components."""
+        if (target_component.comp_type == "Array_of_pairs" and 
+            hasattr(target_component, 'name') and 
+            target_component.name in ["Income", "Expenses"]):
+            
+            # Check if this is the Financial Tracker template (should have string types)
+            component_type_spec = target_component.data.get("type", {})
+            if (isinstance(component_type_spec, dict) and 
+                component_type_spec.get("key") == "str" and 
+                component_type_spec.get("value") == "str"):
+                
+                # Validate data for Financial Tracker components
+                if self.operation in ["append", "push_at", "update_pair"] and hasattr(self, 'data_value') and self.data_value:
+                    if self.operation == "append":
+                        return self._validate_financial_tracker_append()
+                    elif self.operation in ["push_at", "update_pair"]:
+                        return self._validate_financial_tracker_indexed_operation()
+        
+        return True  # No validation needed or passed validation
+
+    def _validate_financial_tracker_append(self):
+        """Validate Financial Tracker append operation."""
+        # For append: data_value = {"item": {"key": str, "value": str}}
+        if (not isinstance(self.data_value, dict) or 
+            "item" not in self.data_value or 
+            not isinstance(self.data_value["item"], dict)):
+            print("Invalid data_value structure for Financial Tracker append. Expected {'item': {'key': str, 'value': str}}")
+            return False
+        
+        pair = self.data_value["item"]
+        if "key" not in pair or "value" not in pair:
+            print("Invalid pair structure for Financial Tracker. Expected {'key': str, 'value': str}")
+            return False
+        
+        if not isinstance(pair["key"], str) or not isinstance(pair["value"], str):
+            print("Both key and value must be strings for Financial Tracker Income/Expenses")
+            return False
+        
+        # Validate Financial Tracker format: "double;date"
+        value = pair["value"]
+        if not self._validate_financial_tracker_format(value):
+            print(f"Invalid format for Financial Tracker value. Expected 'double;date' format, got: {value}")
+            return False
+        
+        return True
+
+    def _validate_financial_tracker_indexed_operation(self):
+        """Validate Financial Tracker push_at/update_pair operations."""
+        # For push_at/update_pair: data_value = {"item": {"key": str, "value": str}, "index": int}
+        if (not isinstance(self.data_value, dict) or 
+            "item" not in self.data_value or 
+            "index" not in self.data_value):
+            print(f"Invalid data_value structure for Financial Tracker {self.operation}. Expected {{'item': {{'key': str, 'value': str}}, 'index': int}}")
+            return False
+        
+        pair = self.data_value["item"]
+        index = self.data_value["index"]
+        
+        if not isinstance(index, int):
+            print("Index must be an integer for Financial Tracker operations")
+            return False
+        
+        if (not isinstance(pair, dict) or 
+            "key" not in pair or 
+            "value" not in pair):
+            print("Invalid pair structure for Financial Tracker. Expected {'key': str, 'value': str}")
+            return False
+        
+        if not isinstance(pair["key"], str) or not isinstance(pair["value"], str):
+            print("Both key and value must be strings for Financial Tracker Income/Expenses")
+            return False
+        
+        # Validate Financial Tracker format: "double;date"
+        value = pair["value"]
+        if not self._validate_financial_tracker_format(value):
+            print(f"Invalid format for Financial Tracker value. Expected 'double;date' format, got: {value}")
+            return False
+        
+        return True
+
+    def _validate_habit_tracker_component(self, target_component):
+        """Special validation for Habit Tracker habits component."""
+        if (target_component.comp_type == "Array_type" and 
+            hasattr(target_component, 'name') and 
+            target_component.name == "habits"):
+            
+            # Check if this is the Habit Tracker template (should have string type)
+            component_type_spec = target_component.data.get("type")
+            if component_type_spec == "str":
+                
+                # Validate data for Habit Tracker habits component
+                if self.operation in ["append", "push_at", "update_at"] and hasattr(self, 'data_value') and self.data_value:
+                    if self.operation == "append":
+                        return self._validate_habit_tracker_append()
+                    elif self.operation in ["push_at", "update_at"]:
+                        return self._validate_habit_tracker_indexed_operation()
+        
+        return True  # No validation needed or passed validation
+
+    def _validate_habit_tracker_append(self):
+        """Validate Habit Tracker append operation."""
+        # For append: data_value = {"item": subject_id}
+        if (not isinstance(self.data_value, dict) or 
+            "item" not in self.data_value):
+            print("Invalid data_value structure for Habit Tracker append. Expected {'item': subject_id}")
+            return False
+        
+        subject_id = self.data_value["item"]
+        
+        # Validate that the subject_id is a string and exists
+        if not isinstance(subject_id, str):
+            print("Subject ID must be a string for Habit Tracker habits")
+            return False
+        
+        # Validate that the subject exists and has the "habit" template
+        if not self._validate_habit_subject(subject_id):
+            print(f"Subject {subject_id} is not a valid habit subject or does not exist")
+            return False
+        
+        return True
+
+    def _validate_habit_tracker_indexed_operation(self):
+        """Validate Habit Tracker push_at/update_at operations."""
+        # For push_at/update_at: data_value = {"item": subject_id, "index": int}
+        if (not isinstance(self.data_value, dict) or 
+            "item" not in self.data_value or 
+            "index" not in self.data_value):
+            print(f"Invalid data_value structure for Habit Tracker {self.operation}. Expected {{'item': subject_id, 'index': int}}")
+            return False
+        
+        subject_id = self.data_value["item"]
+        index = self.data_value["index"]
+        
+        if not isinstance(index, int):
+            print("Index must be an integer for Habit Tracker operations")
+            return False
+        
+        # Validate that the subject_id is a string and exists
+        if not isinstance(subject_id, str):
+            print("Subject ID must be a string for Habit Tracker habits")
+            return False
+        
+        # Validate that the subject exists and has the "habit" template
+        if not self._validate_habit_subject(subject_id):
+            print(f"Subject {subject_id} is not a valid habit subject or does not exist")
+            return False
+        
+        return True
+
     def _validate_financial_tracker_format(self, value):
         """
         Validate that the value is in the format "double;date"
@@ -239,6 +339,27 @@ class DataTransfer:
             
             return True
         except Exception:
+            return False
+
+    def _validate_habit_subject(self, subject_id):
+        """
+        Validate that the subject exists and has the "habit" template.
+        """
+        try:
+            from .subject import Subject_db
+            
+            # Check if subject exists
+            subject = Subject_db.objects(id=subject_id).first()
+            if not subject:
+                return False
+            
+            # Check if subject has the "habit" template
+            if subject.template != "habit":
+                return False
+            
+            return True
+        except Exception as e:
+            print(f"Error validating habit subject {subject_id}: {e}")
             return False
 
     def _execute_pair_operation(self, target_component, source_value):
@@ -500,7 +621,7 @@ class DataTransfer:
             print(f"Invalid target component data structure for '{target_component.comp_type}'. Expected {'item': [values]}.")
             return
 
-        # Check array element type requirement - handle both simple string type and dict with "type" key
+        # Check array element type - handle both simple string type and dict with "type" key
         array_type = None
         if "type" in target_component.data:
             if isinstance(target_component.data["type"], str):
