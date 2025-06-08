@@ -1,4 +1,3 @@
-
 from dotenv import load_dotenv
 import os
 
@@ -20,6 +19,7 @@ env_variables = {
     'CLOUDINARY_CLOUD_NAME': os.getenv('CLOUDNARY_CLOUD_NAME'),
     'CLOUDINARY_URL': f"https://api.cloudinary.com/v1_1/{os.getenv('CLOUDNARY_CLOUD_NAME')}/image/upload",
     'DEV': os.getenv('DEV' ,"false"),
+    'AI_SERVICE_URL': os.getenv('AI_SERVICE_URL', "https://potential-tribble-pjgg7jr5jwqxcrxq6-5001.app.github.dev"),
     'FIREBASE_CREDENTIALS_JSON': {
         'type': "service_account",
         'project_id': os.getenv('FIREBASE_PROJECT_ID'),

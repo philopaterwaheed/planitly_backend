@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, status, HTTPException
 from middleWares import verify_device
 from models import AIMessage_db
+from consts import env_variables
 from datetime import datetime, timezone
 import httpx
 import os
@@ -38,11 +39,10 @@ async def message_ai(
     # Send request to AI service
     ai_response = None
     ai_response_text = ""
-    function_calls = []
     
     try:
         print (ai_request_data.get("ai_accessible_subjects", ""))
-        ai_service_url = os.getenv("AI_SERVICE_URL", "https://potential-tribble-pjgg7jr5jwqxcrxq6-5001.app.github.dev")
+        ai_service_url = env_variables['AI_SERVICE_URL']
         
         async with httpx.AsyncClient() as client:
             response = await client.post(f"{ai_service_url}/chat", json=ai_request_data)
@@ -50,7 +50,6 @@ async def message_ai(
             ai_response = response.json()
             
             ai_response_text = ai_response.get("message", "")
-            function_calls = ai_response.get("function_calls", [])
     
     except httpx.TimeoutException as e:
         raise HTTPException(status_code=504, detail=f"AI service timeout: {str(e)}")
