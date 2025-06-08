@@ -153,15 +153,18 @@ async def list_subjects_in_category(
     MAX_LIMIT = 40
     current_user = user_device[0]
     try:
+        # Decode URL-encoded category names (e.g., spaces as %20)
+        decoded_category_name = decode_name_from_url(category_name)
+        
         # Ensure the category exists for the user
-        category = Category_db.objects(name=category_name, owner=current_user.id).first()
+        category = Category_db.objects(name=decoded_category_name, owner=current_user.id).first()
         if not category:
-            raise HTTPException(status_code=404, detail=f"Category '{category_name}' not found.")
+            raise HTTPException(status_code=404, detail=f"Category '{decoded_category_name}' not found.")
 
         if limit > MAX_LIMIT:
             limit = MAX_LIMIT
 
-        query = Subject_db.objects(category=category_name, owner=current_user.id).order_by('-created_at')
+        query = Subject_db.objects(category=decoded_category_name, owner=current_user.id).order_by('-created_at')
         total = query.count()
         subjects = query.skip(skip).limit(limit)
         return {

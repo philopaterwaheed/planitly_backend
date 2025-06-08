@@ -46,10 +46,10 @@ async def message_ai(
         
         # Configure timeout settings
         timeout = httpx.Timeout(
-            connect=10.0,  # Connection timeout
+            connect=20.0,  # Connection timeout
             read=120.0,    # Read timeout (2 minutes for AI processing)
-            write=10.0,    # Write timeout
-            pool=10.0      # Pool timeout
+            write=40.0,    # Write timeout
+            pool=40.0      # Pool timeout
         )
         
         async with httpx.AsyncClient(timeout=timeout) as client:
