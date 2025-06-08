@@ -44,15 +44,7 @@ async def message_ai(
         print (ai_request_data.get("ai_accessible_subjects", ""))
         ai_service_url = os.getenv("AI_SERVICE_URL", "https://potential-tribble-pjgg7jr5jwqxcrxq6-5001.app.github.dev")
         
-        # Configure timeout settings
-        timeout = httpx.Timeout(
-            connect=20.0,  # Connection timeout
-            read=120.0,    # Read timeout (2 minutes for AI processing)
-            write=40.0,    # Write timeout
-            pool=40.0      # Pool timeout
-        )
-        
-        async with httpx.AsyncClient(timeout=timeout) as client:
+        async with httpx.AsyncClient() as client:
             response = await client.post(f"{ai_service_url}/chat", json=ai_request_data)
             response.raise_for_status()
             ai_response = response.json()
