@@ -179,7 +179,7 @@ async def list_subjects_in_category(
         raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
 
 
-@router.get("/uncategorized/", status_code=status.HTTP_200_OK)
+@router.get("/uncategorized", status_code=status.HTTP_200_OK)
 async def list_uncategorized_subjects(
     user_device: tuple = Depends(verify_device),
     skip: int = 0,
