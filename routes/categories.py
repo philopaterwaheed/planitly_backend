@@ -177,3 +177,29 @@ async def list_subjects_in_category(
         raise HTTPException(status_code=404, detail=f"No subjects found in category '{category_name}'.")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
+
+
+@router.get("/uncategorized/", status_code=status.HTTP_200_OK)
+async def list_uncategorized_subjects(
+    user_device: tuple = Depends(verify_device),
+    skip: int = 0,
+    limit: int = 40
+):
+    """
+    List all uncategorized subjects for the current user, with pagination.
+    """
+    MAX_LIMIT = 40
+    current_user = user_device[0]
+    try:
+        if limit > MAX_LIMIT:
+            limit = MAX_LIMIT
+
+        query = Subject_db.objects(category="Uncategorized", owner=current_user.id).order_by('-created_at')
+        total = query.count()
+        subjects = query.skip(skip).limit(limit)
+        return {
+            "total": total,
+            "subjects": [subject.to_mongo() for subject in subjects]
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
