@@ -460,8 +460,9 @@ class DataTransfer:
 
             result = Arrays.append_to_array(
                 user_id=target_component.owner,
-                component_id=target_component.id,
-                value=source_value
+                host_id=target_component.id,
+                value=source_value,
+                host_type="component"
             )
             
         elif self.operation == "remove_back":
@@ -471,8 +472,9 @@ class DataTransfer:
                 
             result = Arrays.remove_at_index(
                 user_id=target_component.owner,
-                component_id=target_component.id,
-                index=-1
+                host_id=target_component.id,
+                index=-1,
+                host_type="component"
             )
             
         elif self.operation == "remove_front":
@@ -482,8 +484,9 @@ class DataTransfer:
                 
             result = Arrays.remove_at_index(
                 user_id=target_component.owner,
-                component_id=target_component.id,
-                index=0
+                host_id=target_component.id,
+                index=0,
+                host_type="component"
             )
             
         elif self.operation == "delete_at":
@@ -499,8 +502,9 @@ class DataTransfer:
                 
             result = Arrays.remove_at_index(
                 user_id=target_component.owner,
-                component_id=target_component.id,
-                index=index
+                host_id=target_component.id,
+                index=index,
+                host_type="component"
             )
             
         elif self.operation == "push_at":
@@ -546,9 +550,10 @@ class DataTransfer:
                     
             result = Arrays.insert_at_index(
                 user_id=target_component.owner,
-                component_id=target_component.id,
+                host_id=target_component.id,
                 index=index,
-                value=pair
+                value=pair,
+                host_type="component"
             )
             
         elif self.operation == "update_pair":
@@ -594,9 +599,10 @@ class DataTransfer:
                     
             result = Arrays.update_at_index(
                 user_id=target_component.owner,
-                component_id=target_component.id,
+                host_id=target_component.id,
                 index=index,
-                value=pair
+                value=pair,
+                host_type="component"
             )
             
         else:
@@ -654,8 +660,9 @@ class DataTransfer:
                     
             result = Arrays.append_to_array(
                 user_id=target_component.owner,
-                component_id=target_component.id,
-                value=source_value
+                host_id=target_component.id,
+                value=source_value,
+                host_type="component"
             )
             
         elif self.operation == "remove_back":
@@ -665,8 +672,9 @@ class DataTransfer:
                 
             result = Arrays.remove_at_index(
                 user_id=target_component.owner,
-                component_id=target_component.id,
-                index=-1
+                host_id=target_component.id,
+                index=-1,
+                host_type="component"
             )
             
         elif self.operation == "remove_front":
@@ -676,8 +684,9 @@ class DataTransfer:
                 
             result = Arrays.remove_at_index(
                 user_id=target_component.owner,
-                component_id=target_component.id,
-                index=0
+                host_id=target_component.id,
+                index=0,
+                host_type="component"
             )
             
         elif self.operation == "delete_at":
@@ -691,11 +700,11 @@ class DataTransfer:
                 print(f"Invalid index type: expected int, got {type(index).__name__}.")
                 return
                 
-                
             result = Arrays.remove_at_index(
                 user_id=target_component.owner,
-                component_id=target_component.id,
-                index=index
+                host_id=target_component.id,
+                index=index,
+                host_type="component"
             )
             
         elif self.operation == "push_at":
@@ -743,9 +752,10 @@ class DataTransfer:
                     
             result = Arrays.insert_at_index(
                 user_id=target_component.owner,
-                component_id=target_component.id,
+                host_id=target_component.id,
                 index=index,
-                value=value
+                value=value,
+                host_type="component"
             )
         
         elif self.operation == "update_at":
@@ -768,7 +778,6 @@ class DataTransfer:
             if not isinstance(index, int):
                 print(f"Invalid index type: expected int, got {type(index).__name__}.")
                 return
-                
                 
             # Type check the value based on array type
             if array_type and array_type != "any":
@@ -794,9 +803,10 @@ class DataTransfer:
                     
             result = Arrays.update_at_index(
                 user_id=target_component.owner,
-                component_id=target_component.id,
+                host_id=target_component.id,
                 index=index,
-                value=value
+                value=value,
+                host_type="component"
             )
             
         else:
