@@ -169,7 +169,7 @@ async def list_subjects_in_category(
         subjects = query.skip(skip).limit(limit)
         return {
             "total": total,
-            "subjects": [subject.to_mong() for subject in subjects]
+            "subjects": [subject.to_mongo() for subject in subjects]
         }
     except Category_db.DoesNotExist:
         raise HTTPException(status_code=404, detail=f"Category '{category_name}' not found.")
