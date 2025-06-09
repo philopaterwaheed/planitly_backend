@@ -18,6 +18,7 @@ class User(Document):
     lastname = StringField(required=True)
     phone_number = StringField(required=True)
     birthday = DateTimeField(required=True)
+    profile_image = StringField(required=False)  # Cloudinary URL for profile image
     default_subjects = DictField(default={})
     settings = DictField(default=lambda: {"ai_accessible": []})
 
