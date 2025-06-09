@@ -22,8 +22,6 @@ async def get_profile(user_device: tuple = Depends(verify_device)):
             "lastname": user.lastname,
             "phone_number": user.phone_number,
             "birthday": user.birthday.isoformat() if user.birthday else None,
-            "email_verified": user.email_verified,
-            "admin": user.admin,
             "profile_image": user.profile_image,
         }
     except Exception as e:
@@ -43,18 +41,18 @@ async def update_profile(
         birthday = profile_data.get("birthday")
 
         if firstname:
-            if not firstname.isalpha():
+            if not firstname.isalpha() or len(firstname) < 2 or len(firstname) > 19:
                 raise HTTPException(
                     status_code=400,
-                    detail="First name must contain only alphabetic characters.",
+                    detail="First name must contain only alphabetic characters and be between 2-50 characters long.",
                 )
             user.firstname = firstname
 
         if lastname:
-            if not lastname.isalpha():
+            if not lastname.isalpha() or len(lastname) < 2 or len(lastname) > 19:
                 raise HTTPException(
                     status_code=400,
-                    detail="Last name must contain only alphabetic characters.",
+                    detail="Last name must contain only alphabetic characters and be between 2-50 characters long.",
                 )
             user.lastname = lastname
 

@@ -118,13 +118,22 @@ async def register(user_data: dict, request: Request):
                 status_code=400, detail="Messing first name"
             )
 
-        if lastname and not lastname.isalpha():
+        if firstname and (not firstname.isalpha() or len(firstname) < 2 or len(firstname) > 19):
             raise HTTPException(
-                status_code=400, detail="Last name must contain only alphabetic characters."
+                status_code=400, detail="First name must contain only alphabetic characters and be between 2-50 characters long."
+            )
+        elif not firstname:
+            raise HTTPException(
+                status_code=400, detail="Missing first name"
+            )
+
+        if lastname and (not lastname.isalpha() or len(lastname) < 2 or len(lastname) > 19):
+            raise HTTPException(
+                status_code=400, detail="Last name must contain only alphabetic characters and be between 2-50 characters long."
             )
         elif not lastname:
             raise HTTPException(
-                status_code=400, detail="Messing last name"
+                status_code=400, detail="Missing last name"
             )
 
         if phone_number and not re.match(r"^\+?[1-9]\d{1,14}$", phone_number):
