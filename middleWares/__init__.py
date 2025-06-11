@@ -10,6 +10,7 @@ from utils import oauth2_scheme, JWT_SECRET_KEY, ALGORITHM
 from fire import node_firebase
 from utils import logout_user
 from consts import env_variables
+from errors import FirebaseAuthError
 
 
 async def check_request_limit(request: Request):
@@ -117,12 +118,15 @@ async def check_rate_limit(request: Request):
 
     return True
 
-
-async def authenticate_user(username_or_email: str, password: str, device_id=None):
-    """Enhanced authenticate user with device tracking"""
+async def authenticate_user(username_or_email: str, password: str, device_id=None, login=True):
+    """
+    Authenticate user for both login and change password use cases.
+    - For login: device_id is required and device management is enforced.
+    - For change password: device_id is not required, device management is skipped.
+    """
     user = User.objects.filter(
         __raw__={"$or": [{"email": username_or_email},
-                         {"username": username_or_email}]}
+                            {"username": username_or_email}]}
     ).first()
 
     if not user:
@@ -133,25 +137,17 @@ async def authenticate_user(username_or_email: str, password: str, device_id=Non
         return None, "Account locked due to too many invalid attempts"
 
     email = user.email
-    response = await node_firebase(email=email, password=password, operation="login")
-    print(response.text)
-    if response.status_code != 200:
-        # Extract the message from the response
-        try:
-            response_data = response.json()
-            error_message = response_data.get("message", response.text)
-        except ValueError:
-            error_message = response.text
-
-        # Increment invalid attempts on failure
+    try:
+        response = await node_firebase(email=email, password=password, operation="login")
+        print(response.text)
+    except FirebaseAuthError as e:
+        # Node Firebase will raise an error if login fails
         user.invalid_attempts += 1
         user.save()
-
-        # Lock account if too many invalid attempts
         if user.invalid_attempts >= 10:
             await lock_account(str(user.id))
+        return None, e.message
 
-        return None, error_message
     email_verified = response.json().get("email_verified", False)
     if not user.email_verified:
         if not email_verified:
@@ -162,11 +158,11 @@ async def authenticate_user(username_or_email: str, password: str, device_id=Non
     # Reset invalid attempts on successful login
     user.invalid_attempts = 0
 
-    # Add device if request is provided
-    if device_id:
-        print(user.devices)
+    # Device management only for login use case
+    if login:
+        if not device_id:
+            return None, "Device could not be added, please try again"
         if not hasattr(user, 'devices') or user.devices is None:
-            print("No devices found, creating a new list")
             user.devices = []
         if device_id not in user.devices:
             # Check if device limit reached
@@ -174,16 +170,15 @@ async def authenticate_user(username_or_email: str, password: str, device_id=Non
                 return None, "Maximum devices reached for this account"
             user.devices.append(device_id)
         else:
-            # Device already exists, no need to add
-            # log out it becuase maybe there is fron error
+            # Device already exists, log out it because maybe there is a front-end error
             await logout_user(current_user=user, device_id=device_id)
             return None, "Device already logged in"
-    else :
-        return None, "Device could not be added, please try again"
-
-
-    user.save()
-    return user, None
+        user.save()
+        return user, None
+    else:
+        # For change password or other cases, skip device management
+        user.save()
+        return user, None
 
 
 async def verify_device(request: Request, current_user: User = Depends(get_current_user)):

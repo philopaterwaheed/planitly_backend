@@ -241,9 +241,9 @@ async def change_password(user_data: dict, user_device: tuple = Depends(verify_d
             )
 
         # Verify old password
-        user, error_message = await authenticate_user(current_user.email, old_password, None)
+        user, error_message = await authenticate_user(current_user.email, old_password, None , login=False)
         if not user:
-            raise HTTPException(status_code=401, detail="Old password is incorrect.")
+            raise HTTPException(status_code=400, detail="Old password is incorrect.")
         
         try:
             # Update password in Firebase
