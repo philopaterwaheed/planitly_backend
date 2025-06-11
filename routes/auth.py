@@ -301,7 +301,14 @@ async def logout_device(request: Request, user_device: tuple = Depends(verify_de
         current_device_id = user_device[1]
 
         # Check if the request body contains a device ID
-        body = await request.json()
+        try:
+            if request.headers.get("content-type", "").startswith("application/json"):
+                body = await request.json()
+            else:
+                body = {}
+        except Exception:
+            body = {}
+
         device_id = body.get("device_id") if body else current_device_id
 
         if not device_id:
