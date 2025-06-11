@@ -12,9 +12,10 @@ async def create_notification(data: dict, user_device: tuple = Depends(verify_de
     """Create a new notification for a user."""
     current_user = user_device[0]
     user_id = data.get("user_id")
-
     title = data.get("title")
     message = data.get("message")
+    send_push = data.get("send_push", True)  # Whether to send push notification
+
     if not user_id or not title or not message:
         raise HTTPException(
             status_code=400, detail="user_id, title, and message are required"
@@ -28,30 +29,39 @@ async def create_notification(data: dict, user_device: tuple = Depends(verify_de
     user = User.objects(id=user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+    
     try:
-        notification = Notification_db(
-            user_id=user_id,
-            title=title,
-            message=message,
-        )
-        notification.save()
-
-        count_obj = NotificationCount.objects(user_id=user_id).first()
-        if not count_obj:
-            count_obj = NotificationCount(user_id=user_id, count="1")
-        else:
-            count_obj.count = str(int(count_obj.count) + 1)
-        count_obj.save()
-        fcm_message = await FCMManager.send_notification(
-            user_id=user_id,
-            title=title,
-            body=message,
-            data={
-                "type": "notification",
-                "notification_id": str(notification.id)
+        if send_push:
+            # Use FCMManager to send and save notification
+            fcm_result = await FCMManager.send_notification(
+                user_id=user_id,
+                title=title,
+                body=message,
+                data={
+                    "type": "notification",
+                    "created_via": "api"
+                },
+                save_to_db=True
+            )
+            
+            return {
+                "message": "Notification created and sent successfully",
+                "fcm_result": fcm_result,
+                "notification": fcm_result.get("db_notification", {}).get("notification")
             }
-        )
-        return {"message": "Notification created successfully", "notification": notification.to_dict() , "fcm_message": fcm_message}
+        else:
+            # Just save to database without sending push
+            from models.notifications import Notification
+            db_result = Notification.create_notification(user_id, title, message)
+            
+            if not db_result["success"]:
+                raise HTTPException(status_code=500, detail=db_result["error"])
+                
+            return {
+                "message": "Notification created successfully (no push sent)",
+                "notification": db_result["notification"]
+            }
+            
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"An unexpected error occurred: {str(e)}")
@@ -117,10 +127,11 @@ async def delete_notification(notification_id: str, user_device: tuple = Depends
 
         notification.delete()
         
-        # Update notification count
-        count_obj, _ = NotificationCount.objects.get_or_create(user_id=current_user.id)
-        count_obj.count = str(int(count_obj.count) + 1)
-        count_obj.save()
+        # Update notification count (decrease)
+        count_obj = NotificationCount.objects(user_id=str(current_user.id)).first()
+        if count_obj and int(count_obj.count) > 0:
+            count_obj.count = str(int(count_obj.count) - 1)
+            count_obj.save()
 
         return {"message": "Notification deleted successfully"}
     except DoesNotExist:

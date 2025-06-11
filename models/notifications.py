@@ -6,8 +6,7 @@ from firebase_admin import messaging
 class NotificationCount(Document):
     user_id = StringField(required=True)
     count = StringField(default='0')
-    meta = {'collection': 'notification_counts'
-            }
+    meta = {'collection': 'notification_counts'}
 
 
 class Notification_db(Document):
@@ -17,8 +16,7 @@ class Notification_db(Document):
     message = StringField(required=True)  # Notification message
     # Whether the notification has been read
     is_read = BooleanField(default=False)
-    created_at = DateTimeField(
-        default=datetime.utcnow)  # Timestamp of creation
+    created_at = DateTimeField(default=datetime.utcnow)  # Timestamp of creation
     meta = {'collection': 'notifications'}
 
     def to_dict(self):
@@ -34,27 +32,31 @@ class Notification_db(Document):
 
 class Notification:
     @staticmethod
-    def push_notification(user_id: str, title: str, message: str) -> dict:
+    def create_notification(user_id: str, title: str, message: str) -> dict:
+        """Create a notification in the database and update the count"""
         try:
-            notification = Notification(
-                user_id=user_id,
-                title=title,
-                message=message
-            )
-            notification.save()
-            return notification.to_dict()
-        except Exception as e:
-            raise Exception(f"Failed to push notification: {str(e)}")
-
-    @staticmethod
-    def push_notification(self, user_id: str, title: str, message: str) -> dict:
-        try:
+            # Create notification
             notification = Notification_db(
                 user_id=user_id,
                 title=title,
                 message=message
             )
             notification.save()
-            return notification.to_dict()
+            
+            # Update notification count
+            count_obj = NotificationCount.objects(user_id=user_id).first()
+            if not count_obj:
+                count_obj = NotificationCount(user_id=user_id, count="1")
+            else:
+                count_obj.count = str(int(count_obj.count) + 1)
+            count_obj.save()
+            
+            return {
+                "success": True,
+                "notification": notification.to_dict()
+            }
         except Exception as e:
-            raise Exception(f"Failed to push notification: {str(e)}")
+            return {
+                "success": False,
+                "error": f"Failed to create notification: {str(e)}"
+            }
