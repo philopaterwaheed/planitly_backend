@@ -260,7 +260,7 @@ class Subject:
                 )
 
     async def get_full_data(self):
-        """Fetch all data inside the subject, including its components and widgets."""
+        """Fetch all data inside the subject, including its components and widgets with their arrays."""
         # Fetch components
         try:
             components = [
@@ -270,12 +270,86 @@ class Subject:
         except Exception as e:
             raise Exception(f"Error loading components: {str(e)}")
 
-        # Fetch widgets
+        # Fetch widgets with their arrays
         try:
-            widgets = [
-                widget.to_mongo().to_dict()
-                for widget in Widget_db.objects(host_subject=self.id)
-            ]
+            widgets = []
+            widget_docs = Widget_db.objects(host_subject=self.id)
+            
+            for widget_doc in widget_docs:
+                widget_data = widget_doc.to_mongo().to_dict()
+                
+                # Add arrays based on widget type
+                if widget_doc.type == "table":
+                    # Get columns array
+                    columns_result = Arrays.get_array(
+                        user_id=self.owner,
+                        host_id=widget_doc.id,
+                        host_type="widget",
+                        array_name=f"{widget_doc.name}_columns"
+                    )
+                    if columns_result["success"]:
+                        widget_data["columns"] = columns_result["data"]
+                    
+                    # Get rows array
+                    rows_result = Arrays.get_array(
+                        user_id=self.owner,
+                        host_id=widget_doc.id,
+                        host_type="widget",
+                        array_name=f"{widget_doc.name}_rows"
+                    )
+                    if rows_result["success"]:
+                        widget_data["rows"] = rows_result["data"]
+                        
+                elif widget_doc.type == "calendar":
+                    # Get events array
+                    events_result = Arrays.get_array(
+                        user_id=self.owner,
+                        host_id=widget_doc.id,
+                        host_type="widget",
+                        array_name=f"{widget_doc.name}_events"
+                    )
+                    if events_result["success"]:
+                        widget_data["events"] = events_result["data"]
+                        
+                elif widget_doc.type == "note":
+                    # Get tags array
+                    tags_result = Arrays.get_array(
+                        user_id=self.owner,
+                        host_id=widget_doc.id,
+                        host_type="widget",
+                        array_name=f"{widget_doc.name}_tags"
+                    )
+                    if tags_result["success"]:
+                        widget_data["tags"] = tags_result["data"]
+                
+                # For other widget types, check if they have any arrays
+                # This handles custom arrays that might be created for widgets
+                try:
+                    from .arrayItem import ArrayMetadata
+                    widget_arrays = ArrayMetadata.objects(
+                        user=self.owner,
+                        host_widget=widget_doc.id
+                    )
+                    
+                    if widget_arrays:
+                        widget_data["arrays"] = []
+                        for array_meta in widget_arrays:
+                            array_result = Arrays.get_array_by_id(
+                                user_id=self.owner,
+                                array_id=str(array_meta.id)
+                            )
+                            if array_result["success"]:
+                                widget_data["arrays"].append({
+                                    "id": str(array_meta.id),
+                                    "name": array_meta.name,
+                                    "data": array_result["data"]
+                            })
+                except Exception as array_error:
+                    # Continue if array loading fails
+                    print(f"Warning: Could not load arrays for widget {widget_doc.id}: {array_error}")
+                
+                widgets.append(widget_data)
+                
         except Exception as e:
             raise Exception(f"Error loading widgets: {str(e)}")
 
