@@ -36,37 +36,50 @@ async def update_profile(
     """Update the current user's profile."""
     user = user_device[0]
     try:
+        updated_fields = []
+        
+        # Handle firstname
         firstname = profile_data.get("firstname")
-        lastname = profile_data.get("lastname")
-        phone_number = profile_data.get("phone_number")
-        birthday = profile_data.get("birthday")
-
-        if firstname:
+        if firstname is not None:
             if not firstname.isalpha() or len(firstname) < 2 or len(firstname) > 19:
                 raise HTTPException(
                     status_code=400,
                     detail="First name must contain only alphabetic characters and be between 2-19 characters long.",
                 )
-            user.firstname = firstname
+            if user.firstname != firstname:
+                user.firstname = firstname
+                updated_fields.append("firstname")
 
-        if lastname:
+        # Handle lastname
+        lastname = profile_data.get("lastname")
+        if lastname is not None:
             if not lastname.isalpha() or len(lastname) < 2 or len(lastname) > 19:
                 raise HTTPException(
                     status_code=400,
                     detail="Last name must contain only alphabetic characters and be between 2-19 characters long.",
                 )
-            user.lastname = lastname
+            if user.lastname != lastname:
+                user.lastname = lastname
+                updated_fields.append("lastname")
 
+        # Handle phone number
+        phone_number = profile_data.get("phone_number")
         if phone_number is not None:
             try:
-                user.set_phone_number(phone_number)
+                # Compare current phone number with new one
+                current_phone = user.phone_number or {"country_code": "", "number": ""}
+                if current_phone != phone_number:
+                    user.set_phone_number(phone_number)
+                    updated_fields.append("phone_number")
             except ValueError as e:
                 raise HTTPException(status_code=400, detail=str(e))
 
-        if birthday:
+        # Handle birthday
+        birthday = profile_data.get("birthday")
+        if birthday is not None:
             try:
                 if not isinstance(birthday, str):
-                    birthday = datetime.strptime(birthday, "%Y-%m-%d %H:%M:%S")
+                    birthday = datetime.datetime.strptime(birthday, "%Y-%m-%d %H:%M:%S")
 
                 birthday_date = datetime.datetime.fromisoformat(birthday)
                 if birthday_date > datetime.datetime.now():
@@ -77,18 +90,32 @@ async def update_profile(
                     raise HTTPException(
                         status_code=400, detail="Users must be at least 13 years old."
                     )
-                user.birthday = birthday_date
+                
+                # Compare dates (normalize to date only for comparison)
+                current_birthday = user.birthday.date() if user.birthday else None
+                new_birthday = birthday_date.date()
+                
+                if current_birthday != new_birthday:
+                    user.birthday = birthday_date
+                    updated_fields.append("birthday")
             except ValueError:
                 raise HTTPException(
                     status_code=400, detail="Invalid birthday format. Use ISO format (YYYY-MM-DD)."
                 )
-        else: 
-                raise HTTPException(
-                    status_code=400, detail="Messing birthday"
-                )
 
-        user.save()
-        return {"message": "Profile updated successfully"}
+        # Only save if there are changes
+        if updated_fields:
+            user.save()
+            return {
+                "message": "Profile updated successfully",
+                "updated_fields": updated_fields
+            }
+        else:
+            return {
+                "message": "No changes detected",
+                "updated_fields": []
+            }
+            
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

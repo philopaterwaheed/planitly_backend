@@ -90,19 +90,21 @@ class Subject:
                                   is_deletable=is_deletable)
             component.host_subject = self.id
             
-
             component.save_to_db()
             # add a reference to the component in the subject if saved
             self.components.append(component.id)
+            
             # Handle Array_type and Array_generic components
             if component.comp_type in ["Array_type", "Array_generic", "Array_of_pairs"]:
                 array_metadata_result = Arrays.create_array(
                     user_id=component.owner,
-                    component_id=component.id,
+                    host_id=component.id,
                     array_name=component.name,
+                    host_type="component",
+                    initial_elements=[]
                 )
                 if not array_metadata_result["success"]:
-                    raise Exception(500, array_metadata_result["message"])
+                    raise Exception(array_metadata_result["message"])
             self.save_to_db()
         else:
             print(f"Component type '{component_type}' is not defined.")
