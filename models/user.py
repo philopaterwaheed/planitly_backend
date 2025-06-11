@@ -2,6 +2,7 @@ from mongoengine import Document, StringField, EmailField, BooleanField, DateTim
 from .tokens import RefreshToken
 from .devices import Device_db
 import datetime
+import re
 
 
 class User(Document):
@@ -16,13 +17,94 @@ class User(Document):
     last_reset = DateTimeField(default=datetime.datetime.utcnow)  
     firstname = StringField(required=True)
     lastname = StringField(required=True)
-    phone_number = StringField(required=True)
+    phone_number = DictField(default=lambda: {"country_code": "", "number": ""})
     birthday = DateTimeField(required=True)
     profile_image = StringField(required=False)  # Cloudinary URL for profile image
     default_subjects = DictField(default={})
     settings = DictField(default=lambda: {"ai_accessible": []})
 
     meta = {'collection': 'users'}
+
+    @staticmethod
+    def validate_phone_number(phone_data):
+        """Validate phone number dictionary structure and content"""
+        if not isinstance(phone_data, dict):
+            raise ValueError("Phone number must be a dictionary")
+        
+        # Only allow specific keys
+        allowed_keys = {"country_code", "number"}
+        if not set(phone_data.keys()).issubset(allowed_keys):
+            raise ValueError(f"Phone number can only contain keys: {allowed_keys}")
+        
+        country_code = phone_data.get("country_code", "")
+        number = phone_data.get("number", "")
+        
+        # Validate country code
+        if country_code and not re.match(r"^\+?[1-9]\d{0,3}$", country_code):
+            raise ValueError("Invalid country code format. Must be 1-4 digits, optionally starting with +")
+        
+        # Validate phone number
+        if number and not re.match(r"^[0-9]{4,14}$", number):
+            raise ValueError("Invalid phone number format. Must be 4-14 digits")
+        
+        # Validate total length
+        full_number = f"{country_code.replace('+', '')}{number}"
+        if full_number and (len(full_number) < 5 or len(full_number) > 15):
+            raise ValueError("Complete phone number must be between 5-15 digits")
+        
+        return True
+
+    def set_phone_number(self, phone_data):
+        """Set phone number with validation"""
+        if phone_data is None:
+            self.phone_number = {"country_code": "", "number": ""}
+            return
+            
+        self.validate_phone_number(phone_data)
+        
+        # Clean and format the data
+        cleaned_data = {
+            "country_code": phone_data.get("country_code", "").strip(),
+            "number": phone_data.get("number", "").strip()
+        }
+        
+        self.phone_number = cleaned_data
+
+    def get_full_phone_number(self):
+        """Get the complete phone number as a dictionary with formatted versions"""
+        if not self.phone_number or not self.phone_number.get("number"):
+            return {
+                "country_code": "",
+                "number": "",
+                "formatted": "",
+                "international": ""
+            }
+        
+        country_code = self.phone_number.get("country_code", "")
+        number = self.phone_number.get("number", "")
+        
+        # Create formatted versions
+        formatted_local = number
+        formatted_international = ""
+        
+        if country_code:
+            # Ensure country code starts with +
+            if not country_code.startswith("+"):
+                country_code_formatted = f"+{country_code}"
+            else:
+                country_code_formatted = country_code
+            
+            formatted_international = f"{country_code_formatted}{number}"
+            formatted_local = f"{country_code_formatted} {number}"
+        else:
+            formatted_international = number
+        
+        return {
+            "country_code": country_code,
+            "number": number,
+            "formatted": formatted_local,
+            "international": formatted_international
+        }
 
     def add_device(self, device_id):
         """Add a device to user's device list if not at limit"""

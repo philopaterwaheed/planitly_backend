@@ -21,6 +21,7 @@ async def get_profile(user_device: tuple = Depends(verify_device)):
             "firstname": user.firstname,
             "lastname": user.lastname,
             "phone_number": user.phone_number,
+            "full_phone_number": user.get_full_phone_number(),
             "birthday": user.birthday.isoformat() if user.birthday else None,
             "profile_image": user.profile_image,
         }
@@ -44,7 +45,7 @@ async def update_profile(
             if not firstname.isalpha() or len(firstname) < 2 or len(firstname) > 19:
                 raise HTTPException(
                     status_code=400,
-                    detail="First name must contain only alphabetic characters and be between 2-50 characters long.",
+                    detail="First name must contain only alphabetic characters and be between 2-19 characters long.",
                 )
             user.firstname = firstname
 
@@ -52,16 +53,15 @@ async def update_profile(
             if not lastname.isalpha() or len(lastname) < 2 or len(lastname) > 19:
                 raise HTTPException(
                     status_code=400,
-                    detail="Last name must contain only alphabetic characters and be between 2-50 characters long.",
+                    detail="Last name must contain only alphabetic characters and be between 2-19 characters long.",
                 )
             user.lastname = lastname
 
-        if phone_number:
-            if not re.match(r"^\+?[1-9]\d{1,14}$", phone_number):
-                raise HTTPException(
-                    status_code=400, detail="Invalid phone number format."
-                )
-            user.phone_number = phone_number
+        if phone_number is not None:
+            try:
+                user.set_phone_number(phone_number)
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e))
 
         if birthday:
             try:

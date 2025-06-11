@@ -109,18 +109,9 @@ async def register(user_data: dict, request: Request):
                 status_code=400, detail="Weak password. Must contain uppercase, lowercase, number, special character, and be at least 8 characters long."
             )
 
-        if firstname and not firstname.isalpha():
-            raise HTTPException(
-                status_code=400, detail="First name must contain only alphabetic characters."
-            )
-        elif not firstname:
-            raise HTTPException(
-                status_code=400, detail="Messing first name"
-            )
-
         if firstname and (not firstname.isalpha() or len(firstname) < 2 or len(firstname) > 19):
             raise HTTPException(
-                status_code=400, detail="First name must contain only alphabetic characters and be between 2-50 characters long."
+                status_code=400, detail="First name must contain only alphabetic characters and be between 2-19 characters long."
             )
         elif not firstname:
             raise HTTPException(
@@ -136,13 +127,20 @@ async def register(user_data: dict, request: Request):
                 status_code=400, detail="Missing last name"
             )
 
-        if phone_number and not re.match(r"^\+?[1-9]\d{1,14}$", phone_number):
-            raise HTTPException(
-                status_code=400, detail="Invalid phone number format."
-            )
+        # Validate phone number structure
+        if phone_number is not None:
+            if not isinstance(phone_number, dict):
+                raise HTTPException(
+                    status_code=400, detail="Phone number must be a dictionary with country_code and number"
+                )
+            
+            try:
+                User.validate_phone_number(phone_number)
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e))
         elif not phone_number:
             raise HTTPException(
-                status_code=400, detail="Messing phone number"
+                status_code=400, detail="Missing phone number"
             )
 
         if birthday:
@@ -165,7 +163,7 @@ async def register(user_data: dict, request: Request):
                 )
         else: 
                 raise HTTPException(
-                    status_code=400, detail="Messing birthday"
+                    status_code=400, detail="Missing birthday"
                 )
 
         try:
@@ -187,10 +185,11 @@ async def register(user_data: dict, request: Request):
                 email_verified=False,
                 firstname=firstname,
                 lastname=lastname,
-                phone_number=phone_number,
                 birthday=birthday_date if birthday else None,
             )
-
+            
+            # Set phone number using the validation method
+            user.set_phone_number(phone_number)
             user.save()
 
             # Create default subjects for the new user
