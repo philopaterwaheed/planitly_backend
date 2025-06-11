@@ -229,14 +229,15 @@ class FCMManager:
 
     @staticmethod
     async def send_password_change_notification(user_id: str, current_device_id: str) -> Dict:
-        """Send password change notification to all devices"""
+        """Send password change notification to all devices before logout"""
         try:
             title = "Password Changed"
             body = "Your password was changed. All other devices have been logged out for security."
             data = {
                 "type": "password_change",
                 "action": "logout",
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.utcnow().isoformat(),
+                "changed_from_device": current_device_id
             }
 
             # Send to all devices (they will be logged out after this)

@@ -1,10 +1,12 @@
 from fastapi import APIRouter, HTTPException, status, Depends, File, UploadFile
-from middleWares import verify_device
+from middleWares import verify_device, authenticate_user
 from cloudinary.uploader import upload, destroy
 from cloudinary.exceptions import Error as CloudinaryError
+from cloud import extract_public_id_from_url
+from models import Device_db, FCMManager
+from firebase_admin import auth
 import re
 import datetime
-from cloud import extract_public_id_from_url
 
 router = APIRouter(prefix="/profile", tags=["Profile"])
 
@@ -215,5 +217,82 @@ async def delete_profile_image(user_device: tuple = Depends(verify_device)):
             status_code=500, 
             detail=f"An unexpected error occurred: {str(e)}"
         )
+
+
+@router.put("/change-password", status_code=status.HTTP_200_OK)
+async def change_password(user_data: dict, user_device: tuple = Depends(verify_device)):
+    """
+    Change the password for the authenticated user.
+    """
+    current_user = user_device[0]
+    current_device_id = user_device[1]
+    
+    try:
+        old_password = user_data.get("oldPassword")
+        new_password = user_data.get("newPassword")
+
+        if not old_password or not new_password:
+            raise HTTPException(status_code=400, detail="Old and new passwords are required.")
+
+        # Validate new password strength
+        if not re.match(r"^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*[@$!%*?&^#_+=<>.,;:|\\/-])[A-Za-z\d@$!%*?&^#_+=<>.,;:|\\/-]{8,}$", new_password):
+            raise HTTPException(
+                status_code=400, detail="Weak password. Must contain uppercase, lowercase, number, special character, and be at least 8 characters long."
+            )
+
+        # Verify old password
+        user, error_message = await authenticate_user(current_user.email, old_password, None)
+        if not user:
+            raise HTTPException(status_code=401, detail="Old password is incorrect.")
+        
+        try:
+            # Update password in Firebase
+            auth.update_user(current_user.firebase_uid, password=new_password)
+        except auth.AuthError as e:
+            raise HTTPException(status_code=400, detail=f"Firebase error: {str(e)}")
+
+        # Log out all other devices for security
+        try:
+            logged_out_devices = []
+            devices_to_logout = Device_db.objects(
+                user_id=str(current_user.id),
+                device_id__ne=current_device_id
+            )
+            
+            for device in devices_to_logout:
+                try:
+                    from utils import logout_user
+                    await logout_user(current_user, device.device_id)
+                    logged_out_devices.append(device.device_id)
+                except Exception as logout_error:
+                    print(f"Warning: Failed to logout device {device.device_id}: {logout_error}")
+                    # Continue with other devices even if one fails
+            
+            # Send notification to other devices about password change and logout
+            await FCMManager.send_password_change_notification(
+                user_id=str(current_user.id),
+                current_device_id=current_device_id
+            )
+            
+            return {
+                "message": "Password changed successfully. All other devices have been logged out for security.",
+                "updated_fields": ["password"],
+                "logged_out_devices": len(logged_out_devices),
+                "security_action": "other_devices_logged_out"
+            }
+            
+        except Exception as security_error:
+            # Password was changed successfully, but device logout failed
+            print(f"Warning: Password changed but failed to logout other devices: {security_error}")
+            return {
+                "message": "Password changed successfully, but some devices may still be logged in. Please check your devices.",
+                "updated_fields": ["password"],
+                "warning": "Device logout partially failed"
+            }
+
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
 
 
