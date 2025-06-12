@@ -44,6 +44,12 @@ async def get_current_user(request: Request, token: str = Depends(oauth2_scheme)
         if not user_id:
             raise HTTPException(status_code=401, detail="Invalid token")
 
+        if await is_account_locked(user_id):
+            raise HTTPException(
+                status_code=423, 
+                detail="Account temporarily locked due to security concerns. Please try again later."
+            )
+
         # Fetch user from DB
         user = User.objects(id=user_id).first()
         if not user:
