@@ -6,6 +6,7 @@ from mongoengine.queryset.visitor import Q
 from mongoengine.errors import DoesNotExist, ValidationError , NotUniqueError
 import datetime
 from utils.habit_tracker import HabitTrackerManager
+from utils.subject import SubjectVisitManager
 
 router = APIRouter(prefix="/subjects", tags=["Subjects"])
 
@@ -48,16 +49,6 @@ async def create_subject(data: dict, user_device: tuple = Depends(verify_device)
         raise HTTPException(status_code=400, detail=f"Validation error: {str(e)}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
-
-#todo check the security of this route
-@router.get("/{subject_id}", status_code=status.HTTP_200_OK, dependencies=[Depends(verify_device)])
-async def get_subject(subject_id: str):
-    """Retrieve a subject by its ID."""
-    try:
-        subject = Subject_db.objects.get(id=subject_id)
-        return subject.to_mongo()
-    except DoesNotExist:
-        raise HTTPException(status_code=404, detail="Subject not found")
 
 
 # get all subjects route
@@ -238,52 +229,6 @@ async def delete_subject(subject_id: str, user_device: tuple = Depends(verify_de
         raise HTTPException(
             status_code=500, detail=f"An unexpected error occurred: {str(e)}")
 
-@router.get("/{subject_id}/full-data", status_code=status.HTTP_200_OK, dependencies=[Depends(verify_device)])
-async def get_subject_full_data(subject_id: str, user_device: tuple = Depends(verify_device)):
-    """Retrieve all data inside a subject, including its components and widgets, and record the visit."""
-    current_user = user_device[0]
-    try:
-        # Fetch the subject
-        subject_db = Subject_db.objects.get(id=subject_id)
-        if not subject_db:
-            raise HTTPException(status_code=404, detail="Subject not found")
-
-        # Check if the user is authorized to access the subject
-        if str(current_user.id) != str(subject_db.owner) and not current_user.admin:
-            raise HTTPException(
-                status_code=403, detail="Not authorized to access this subject"
-            )
-
-        # Convert to Subject instance to use the increment method and get full data
-        subject = Subject.from_db(subject_db)
-        
-        # Record the visit (increment visit count with decay mechanism)
-        subject.increment_visit_count()
-        
-        # Update the database with visit data
-        subject_db.update(
-            times_visited=subject.times_visited,
-            last_visited=subject.last_visited
-        )
-        
-        # Get the full data
-        full_data = await subject.get_full_data()
-        
-        # Add visit information to the response
-        full_data["visit_info"] = {
-            "times_visited": subject.times_visited.get('count', 0) if isinstance(subject.times_visited, dict) else 0,
-            "last_visited": subject.last_visited.isoformat() if subject.last_visited else None,
-            "visit_recorded": True
-        }
-        
-        return full_data
-
-    except DoesNotExist:
-        raise HTTPException(status_code=404, detail="Subject not found")
-    except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"An unexpected error occurred: {str(e)}"
-        )
 
 
 @router.get("/most-visited", status_code=status.HTTP_200_OK)
@@ -299,92 +244,15 @@ async def get_most_visited_subjects(
         if limit > MAX_LIMIT:
             limit = MAX_LIMIT
 
-        # Database-side decay update using aggregation pipeline
-        now = datetime.datetime.utcnow()
-        seven_days_ago = now - datetime.timedelta(days=7)
-        
-        # Aggregation pipeline to apply decay and update records
-        decay_pipeline = [
-            # Match user's subjects that need decay (older than 7 days)
-            {
-                "$match": {
-                    "owner": current_user.id,
-                    "times_visited.last_decay": {"$lt": seven_days_ago}
-                }
-            },
-            # Add calculated fields for decay
-            {
-                "$addFields": {
-                    "days_since_decay": {
-                        "$divide": [
-                            {"$subtract": [now, "$times_visited.last_decay"]},
-                            1000 * 60 * 60 * 24  # Convert milliseconds to days
-                        ]
-                    }
-                }
-            },
-            {
-                "$addFields": {
-                    "weeks_since_decay": {
-                        "$floor": {"$divide": ["$days_since_decay", 7]}
-                    }
-                }
-            },
-            # Apply exponential decay (0.9^weeks)
-            {
-                "$addFields": {
-                    "decay_factor": {
-                        "$pow": [0.9, "$weeks_since_decay"]
-                    }
-                }
-            },
-            {
-                "$addFields": {
-                    "times_visited.count": {
-                        "$floor": {
-                            "$multiply": ["$times_visited.count", "$decay_factor"]
-                        }
-                    },
-                    "times_visited.last_decay": now
-                }
-            },
-            # Remove temporary fields
-            {
-                "$unset": ["days_since_decay", "weeks_since_decay", "decay_factor"]
-            },
-            # Merge back to collection (update in place)
-            {
-                "$merge": {
-                    "into": "subjects",
-                    "whenMatched": "replace"
-                }
-            }
-        ]
-        
-        # Execute decay update
-        decay_result = list(Subject_db._get_collection().aggregate(decay_pipeline))
-        updated_count = len(decay_result) if decay_result else 0
+        # Apply decay to subjects that need it
+        updated_count = await SubjectVisitManager.apply_visit_decay_to_subjects(current_user.id)
 
-        # Now query the updated data with sorting
-        query = Subject_db.objects(owner=current_user.id).order_by('-times_visited.count', '-last_visited')
-        total = query.count()
-        subjects = query.skip(skip).limit(limit)
+        # Get most visited subjects
+        result = SubjectVisitManager.get_most_visited_subjects(current_user.id, skip, limit)
         
-        # Convert to response format
-        subjects_data = []
-        for subject_db in subjects:
-            subject_dict = subject_db.to_mongo().to_dict()
-            # Ensure visit count is properly formatted
-            times_visited = subject_dict.get('times_visited', {})
-            if isinstance(times_visited, dict):
-                subject_dict['times_visited'] = times_visited.get('count', 0)
-            else:
-                subject_dict['times_visited'] = 0
-            subjects_data.append(subject_dict)
-
         return {
-            "total": total,
-            "subjects": subjects_data,
+            "total": result["total"],
+            "subjects": result["subjects"],
             "decay_updates_applied": updated_count
         }
 
@@ -940,3 +808,61 @@ async def mark_habit_undone_optimized(
         raise HTTPException(status_code=404, detail="Subject not found")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
+
+#todo check the security of this route
+@router.get("/{subject_id}", status_code=status.HTTP_200_OK, dependencies=[Depends(verify_device)])
+async def get_subject(subject_id: str):
+    """Retrieve a subject by its ID."""
+    try:
+        subject = Subject_db.objects.get(id=subject_id)
+        return subject.to_mongo()
+    except DoesNotExist:
+        raise HTTPException(status_code=404, detail="Subject not found")
+
+
+@router.get("/{subject_id}/full-data", status_code=status.HTTP_200_OK, dependencies=[Depends(verify_device)])
+async def get_subject_full_data(subject_id: str, user_device: tuple = Depends(verify_device)):
+    """Retrieve all data inside a subject, including its components and widgets, and record the visit."""
+    current_user = user_device[0]
+    try:
+        # Fetch the subject
+        subject_db = Subject_db.objects.get(id=subject_id)
+        if not subject_db:
+            raise HTTPException(status_code=404, detail="Subject not found")
+
+        # Check if the user is authorized to access the subject
+        if str(current_user.id) != str(subject_db.owner) and not current_user.admin:
+            raise HTTPException(
+                status_code=403, detail="Not authorized to access this subject"
+            )
+
+        # Convert to Subject instance to use the increment method and get full data
+        subject = Subject.from_db(subject_db)
+        
+        # Record the visit (increment visit count with decay mechanism)
+        subject.increment_visit_count()
+        
+        # Update the database with visit data
+        subject_db.update(
+            times_visited=subject.times_visited,
+            last_visited=subject.last_visited
+        )
+        
+        # Get the full data
+        full_data = await subject.get_full_data()
+        
+        # Add visit information to the response
+        full_data["visit_info"] = {
+            "times_visited": subject.times_visited.get('count', 0) if isinstance(subject.times_visited, dict) else 0,
+            "last_visited": subject.last_visited.isoformat() if subject.last_visited else None,
+            "visit_recorded": True
+        }
+        
+        return full_data
+
+    except DoesNotExist:
+        raise HTTPException(status_code=404, detail="Subject not found")
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"An unexpected error occurred: {str(e)}"
+        )

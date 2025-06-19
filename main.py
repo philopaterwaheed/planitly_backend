@@ -6,7 +6,7 @@ from pytz import UTC
 from models import MONGO_HOST
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
-from routes import subjects, components, auth, dataTransfers, connection, widget, notifications , profile, categories , templets , settings , ai_message
+from routes import subjects, components, auth, dataTransfers, connection, widget, notifications , profile, categories , templets , settings , ai_message , home 
 import os
 import logging
 from mongoengine import connect, disconnect
@@ -55,7 +55,7 @@ def run_worker():
 
 
 @app.get("/")
-async def home():
+async def welcome():
     return {"message": "Welcome to the Planitly API!"}
 
 
@@ -90,6 +90,7 @@ app.include_router(categories.router)
 app.include_router(templets.router)
 app.include_router(settings.router)
 app.include_router(ai_message.router)
+app.include_router(home.router)
 
 
 if __name__ == "__main__":
