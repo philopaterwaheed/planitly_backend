@@ -732,6 +732,144 @@ async def get_not_done_habits_for_date_optimized(
         )
 
 
+@router.get("/{subject_id}/habit/detailed-status/{date}", status_code=status.HTTP_200_OK)
+async def get_habit_detailed_status(
+    subject_id: str,
+    date: str,
+    user_device: tuple = Depends(verify_device)
+):
+    """Get detailed status for a specific habit including todos and completion percentage."""
+    current_user = user_device[0]
+    try:
+        # Validate date format
+        try:
+            datetime.datetime.strptime(date, "%Y-%m-%d")
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+
+        # Verify subject exists and user has access
+        subject_db = Subject_db.objects.get(id=subject_id)
+        if not subject_db:
+            raise HTTPException(status_code=404, detail="Subject not found")
+
+        if str(current_user.id) != str(subject_db.owner) and not current_user.admin:
+            raise HTTPException(status_code=403, detail="Not authorized to access this subject")
+
+        if subject_db.template != "habit":
+            raise HTTPException(status_code=400, detail="This endpoint is only for habit subjects")
+
+        # Get detailed status
+        detailed_status = await HabitTrackerManager.get_habit_detailed_status(
+            current_user.id, subject_id, date
+        )
+
+        return detailed_status
+
+    except DoesNotExist:
+        raise HTTPException(status_code=404, detail="Subject not found")
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"An unexpected error occurred: {str(e)}"
+        )
+
+
+@router.get("/habits/daily-status/{date}", status_code=status.HTTP_200_OK)
+async def get_daily_habits_status_optimized(
+    date: str,
+    user_device: tuple = Depends(verify_device)
+):
+    """Get all user's habits categorized as done/not done for a specific date (optimized version)."""
+    current_user = user_device[0]
+    try:
+        # Validate date format
+        try:
+            datetime.datetime.strptime(date, "%Y-%m-%d")
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+
+        # Use optimized habit tracker
+        status = await HabitTrackerManager.get_daily_habits_status(current_user.id, date)
+        
+        completion_rate = 0.0
+        if status["total_habits"] > 0:
+            completion_rate = len(status["done_habits"]) / status["total_habits"]
+
+        return {
+            "date": date,
+            "total_habits": status["total_habits"],
+            "done_habits": {
+                "count": len(status["done_habits"]),
+                "habits": status["done_habits"]
+            },
+            "not_done_habits": {
+                "count": len(status["not_done_habits"]),
+                "habits": status["not_done_habits"]
+            },
+            "completion_rate": round(completion_rate, 2)
+        }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"An unexpected error occurred: {str(e)}"
+        )
+
+
+@router.get("/habits/done/{date}", status_code=status.HTTP_200_OK)
+async def get_done_habits_for_date_optimized(
+    date: str,
+    user_device: tuple = Depends(verify_device)
+):
+    """Get all user's habits that are marked as done for a specific date (optimized version)."""
+    current_user = user_device[0]
+    try:
+        # Validate date format
+        try:
+            datetime.datetime.strptime(date, "%Y-%m-%d")
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+
+        status = await HabitTrackerManager.get_daily_habits_status(current_user.id, date)
+
+        return {
+            "date": date,
+            "count": len(status["done_habits"]),
+            "done_habits": status["done_habits"]
+        }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"An unexpected error occurred: {str(e)}"
+        )
+
+
+@router.get("/habits/not-done/{date}", status_code=status.HTTP_200_OK)
+async def get_not_done_habits_for_date_optimized(
+    date: str,
+    user_device: tuple = Depends(verify_device)
+):
+    """Get all user's habits that are not marked as done for a specific date (optimized version)."""
+    current_user = user_device[0]
+    try:
+        # Validate date format
+        try:
+            datetime.datetime.strptime(date, "%Y-%m-%d")
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+
+        status = await HabitTrackerManager.get_daily_habits_status(current_user.id, date)
+
+        return {
+            "date": date,
+            "count": len(status["not_done_habits"]),
+            "not_done_habits": status["not_done_habits"]
+        }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"An unexpected error occurred: {str(e)}"
+        )
+
+
 @router.put("/{subject_id}/habit/mark-done-optimized", status_code=status.HTTP_200_OK)
 async def mark_habit_done_optimized(
     subject_id: str, 
