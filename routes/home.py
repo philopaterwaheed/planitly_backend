@@ -17,11 +17,45 @@ async def get_home_page_data(user_device: tuple = Depends(verify_device)):
     try:
         await SubjectVisitManager.apply_visit_decay_to_subjects(current_user.id)
 
-        # Get today's habits status
+        # Get today's habits status with detailed progress
         habits_status = await HabitTrackerManager.get_daily_habits_status(current_user.id, today)
         habits_completion_rate = 0.0
         if habits_status["total_habits"] > 0:
             habits_completion_rate = len(habits_status["done_habits"]) / habits_status["total_habits"]
+
+        # Get detailed progress for all tracked habits
+        all_habits_progress = []
+        
+        # Combine done and not done habits for complete progress overview
+        all_tracked_habits = habits_status["done_habits"] + habits_status["not_done_habits"]
+        
+        for habit in all_tracked_habits:
+            # Get detailed status for each habit
+            detailed_status = await HabitTrackerManager.get_habit_detailed_status(
+                current_user.id, habit["id"], today
+            )
+            
+            habit_progress = {
+                "id": habit["id"],
+                "name": habit["name"],
+                "category": habit.get("category", "Uncategorized"),
+                "is_done": habit["is_done"],
+                "completion_percentage": habit["completion_percentage"],
+                "manually_marked": habit.get("manually_marked", False),
+                "has_todos": detailed_status.get("has_todos", False),
+                "todos_count": len(detailed_status.get("todos", [])),
+                "completed_todos_count": len([t for t in detailed_status.get("todos", []) if t.get("completed", False)]),
+                "created_at": habit.get("created_at")
+            }
+            
+            # Add todos breakdown if available
+            if detailed_status.get("todos"):
+                habit_progress["todos"] = detailed_status["todos"]
+            
+            all_habits_progress.append(habit_progress)
+
+        # Sort habits by completion status (done first) and then by name
+        all_habits_progress.sort(key=lambda x: (not x["is_done"], x["name"]))
 
         # Get today's connections (due today) - using end_date
         today_date = datetime.datetime.strptime(today, "%Y-%m-%d")
@@ -113,7 +147,8 @@ async def get_home_page_data(user_device: tuple = Depends(verify_device)):
                 "not_done_today": len(habits_status["not_done_habits"]),
                 "completion_rate": round(habits_completion_rate, 2),
                 "done_habits": habits_status["done_habits"][:5],  # Top 5 completed habits
-                "not_done_habits": habits_status["not_done_habits"][:5]  # Top 5 pending habits
+                "not_done_habits": habits_status["not_done_habits"][:5],  # Top 5 pending habits
+                "detailed_progress": all_habits_progress  # Complete progress for all tracked habits
             },
             "connections": {
                 "total_today": len(connections_data),
