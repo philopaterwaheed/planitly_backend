@@ -309,8 +309,11 @@ class DataTransfer:
 
     def _validate_financial_tracker_format(self, value):
         """
-        Validate that the value is in the format "double;date"
-        Example: "150.50;2024-01-15" or "1000;2024-12-25"
+        Validate that the value is in the format "double;date" or "double ; ISO_date"
+        Examples: 
+        - "150.50;2024-01-15" 
+        - "1000;2024-12-25"
+        - "20000.0 ; 2025-06-24T00:00:00.000"
         """
         try:
             if not isinstance(value, str) or ';' not in value:
@@ -321,6 +324,9 @@ class DataTransfer:
                 return False
             
             amount_str, date_str = parts
+            # Strip whitespace from both parts
+            amount_str = amount_str.strip()
+            date_str = date_str.strip()
             
             # Validate amount (double/float)
             try:
@@ -330,10 +336,16 @@ class DataTransfer:
             except ValueError:
                 return False
             
-            # Validate date format (YYYY-MM-DD)
+            # Validate date format - support both YYYY-MM-DD and ISO format
             try:
-                from datetime import datetime
-                datetime.strptime(date_str, "%Y-%m-%d")
+                if 'T' in date_str:
+                    # ISO format like "2025-06-24T00:00:00.000"
+                    from dateutil import parser as date_parser
+                    date_parser.parse(date_str)
+                else:
+                    # Simple format like "2024-01-15"
+                    from datetime import datetime
+                    datetime.strptime(date_str, "%Y-%m-%d")
             except ValueError:
                 return False
             
