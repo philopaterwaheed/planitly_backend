@@ -63,18 +63,6 @@ async def message_ai(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error communicating with AI service: {str(e)}")
 
-    # Save the conversation to database
-    try:
-        ai_message = AIMessage_db(
-            user_id=str(user.id),
-            user_message=message,
-            ai_response=ai_response_text,
-            created_at=datetime.now(timezone.utc)
-        )
-        ai_message.save()
-    except Exception as e:
-        print(f"Failed to save AI message to database: {str(e)}")
-
     # Prepare response
     response_data = {
         "ai_response": ai_response_text,
