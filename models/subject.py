@@ -12,7 +12,7 @@ import datetime
 # use the Subject_db class to interact with the database directly without the helper
 class Subject_db(Document):
     id = StringField(primary_key=True)
-    name = StringField(required=True)
+    name = StringField(required=True, max_length=50)
     components = ListField(ReferenceField(Component_db, reverse_delete_rule=NULLIFY))
     widgets = ListField(ReferenceField(Widget_db, reverse_delete_rule=NULLIFY))
     owner = StringField(required=True)  # Store user ID
@@ -244,7 +244,7 @@ class Subject:
             custom_template = CustomTemplate_db.objects(id=template).first()
             if not custom_template:
                 raise ValueError(f"Template '{template}' does not exist.")
-            self.template = str(custom_template.id)
+            self.template = str(custom_template.name)
             self.category = custom_template.category or "Uncategorized"
             components = custom_template.data.get("components", [])
             for comp in components:

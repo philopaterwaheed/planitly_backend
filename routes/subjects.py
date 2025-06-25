@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from models import Subject_db
 from middleWares import verify_device, admin_required
-from models import  Subject, Category_db ,Widget_db, Component_db
+from models import  Subject, Category_db ,Widget_db, Component_db , TEMPLATES , CustomTemplate_db 
 from mongoengine.queryset.visitor import Q
 from mongoengine.errors import DoesNotExist, ValidationError , NotUniqueError
 import datetime
@@ -20,6 +20,10 @@ async def create_subject(data: dict, user_device: tuple = Depends(verify_device)
         category_name = data.get("category") or None
         if not sub_name:
             raise HTTPException(status_code=400, detail="Subject name is required.")
+
+        # Validate subject name length
+        if len(sub_name) > 50:
+            raise HTTPException(status_code=400, detail="Subject name must be 50 characters or less.")
 
         # Check for uniqueness of subject name for this user
         existing_subject = Subject_db.objects(name=sub_name, owner=current_user.id).first()
@@ -230,6 +234,82 @@ async def delete_subject(subject_id: str, user_device: tuple = Depends(verify_de
             status_code=500, detail=f"An unexpected error occurred: {str(e)}")
 
 
+
+@router.get("/create-info", status_code=status.HTTP_200_OK)
+async def get_subject_creation_info(user_device: tuple = Depends(verify_device)):
+    """Get all information needed to create a subject: categories, built-in templates, and custom templates."""
+    current_user = user_device[0]
+    try:
+        # Get user's categories
+        categories = Category_db.objects(owner=current_user.id).order_by('name')
+        categories_data = [
+            {
+                "name": category.name,
+                "description": category.description or ""
+            }
+            for category in categories
+        ]
+
+        builtin_templates = []
+        for template_key, template_data in TEMPLATES.items():
+            builtin_templates.append({
+                "name": template_key,
+                "type": "built-in",
+                "category": template_data.get("category", "Uncategorized"),
+                "description": f"{template_key.replace('_', ' ').title()} template with {len(template_data.get('components', []))} components and {len(template_data.get('widgets', []))} widgets"
+            })
+
+        # Get user's custom templates
+        custom_templates = CustomTemplate_db.objects(owner=current_user.id).order_by('name')
+        custom_templates_data = []
+        for template in custom_templates:
+            components_count = len(template.data.get("components", []))
+            widgets_count = len(template.data.get("widgets", []))
+            custom_templates_data.append({
+                "id": str(template.id),
+                "name": template.name,
+                "type": "custom",
+                "category": template.category or "Uncategorized",
+                "description": template.description or f"Custom template with {components_count} components and {widgets_count} widgets"
+            })
+
+        # Combine all templates
+        all_templates = builtin_templates + custom_templates_data
+
+        # Sort templates by category and then by name
+        all_templates.sort(key=lambda x: (x["category"], x["name"]))
+
+        # Group templates by category
+        templates_by_category = {}
+        for template in all_templates:
+            category = template["category"]
+            if category not in templates_by_category:
+                templates_by_category[category] = []
+            templates_by_category[category].append(template)
+
+        return {
+            "categories": categories_data,
+            "templates": {
+                "total": len(all_templates),
+                "built_in_count": len(builtin_templates),
+                "custom_count": len(custom_templates_data),
+                "by_category": templates_by_category,
+                "all": all_templates
+            },
+            "creation_rules": {
+                "subject_name_required": True,
+                "unique_name_per_user": True,
+                "template_optional": True,
+                "category_optional": True,
+                "max_name_length": 50,
+                "allowed_characters": "Letters, numbers, spaces, hyphens, and underscores"
+            }
+        }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"An unexpected error occurred: {str(e)}"
+        )
 
 @router.get("/most-visited", status_code=status.HTTP_200_OK)
 async def get_most_visited_subjects(

@@ -17,7 +17,8 @@
     },
     {
       "src": "/(.*)",
-      "dest": "main.py"
+      "dest": "main.py",
+      "maxDuration": 15
     }
   ]
 }
