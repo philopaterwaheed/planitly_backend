@@ -245,7 +245,6 @@ async def get_subject_creation_info(user_device: tuple = Depends(verify_device))
         categories_data = [
             {
                 "name": category.name,
-                "description": category.description or ""
             }
             for category in categories
         ]
