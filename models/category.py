@@ -4,7 +4,6 @@ from datetime import datetime, timezone
 
 
 class Category_db(Document):
-    id = StringField(primary_key=True)
     name = StringField(required=True, unique_with="owner")  # Unique per user
     owner = ReferenceField(User, required=True)  # Reference to the user who owns the category
     created_at = DateTimeField(default=datetime.now(timezone.utc))

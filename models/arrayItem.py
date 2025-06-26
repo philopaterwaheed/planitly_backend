@@ -23,7 +23,9 @@ class ArrayMetadata(Document):
     meta = {
         'collection': 'array_metadata',
         'indexes': [
-            {'fields': ['user', 'name'], 'unique': True},
+            # Unique constraint on (user, name, host_component) and (user, name, host_widget)
+            {'fields': ['user', 'name', 'host_component'], 'unique': True, 'sparse': True},
+            {'fields': ['user', 'name', 'host_widget'], 'unique': True, 'sparse': True},
             {'fields': ['host_component']},
             {'fields': ['host_widget']},
         ]

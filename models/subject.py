@@ -82,18 +82,20 @@ class Subject:
 
     async def add_component(self, component_name, component_type, data=None, is_deletable=True):
         if component_type in PREDEFINED_COMPONENT_TYPES:
-            component = Component(name=component_name,
-                                  host_subject=self.id,
-                                  owner=self.owner,
-                                  comp_type=component_type,
-                                  data=data,
-                                  is_deletable=is_deletable)
+            component = Component(
+                name=component_name,
+                host_subject=self.id,
+                owner=self.owner,
+                comp_type=component_type,
+                data=data,
+                is_deletable=is_deletable
+            )
             component.host_subject = self.id
-            
+
             component.save_to_db()
             # add a reference to the component in the subject if saved
             self.components.append(component.id)
-            
+
             # Handle Array_type and Array_generic components
             if component.comp_type in ["Array_type", "Array_generic", "Array_of_pairs"]:
                 array_metadata_result = Arrays.create_array(
@@ -220,11 +222,16 @@ class Subject:
         """
         Apply a template to the subject and set its category.
         Supports both built-in and custom templates.
+        Creates category if it doesn't exist.
         """
         # First, check built-in templates
         if template in TEMPLATES:
             self.template = template
-            self.category = TEMPLATES[template].get("category", "Uncategorized")
+            template_category = TEMPLATES[template].get("category", "Uncategorized")
+            
+            # Ensure category exists for built-in templates
+            self.category = await self._ensure_category_exists(template_category)
+            
             for comp in TEMPLATES[template]["components"]:
                 is_comp_deletable = comp.get("is_deletable", True)
                 await self.add_component(comp["name"], comp["type"], comp["data"], is_deletable=is_comp_deletable)
@@ -244,8 +251,13 @@ class Subject:
             custom_template = CustomTemplate_db.objects(id=template).first()
             if not custom_template:
                 raise ValueError(f"Template '{template}' does not exist.")
+            
             self.template = str(custom_template.name)
-            self.category = custom_template.category or "Uncategorized"
+            template_category = custom_template.category or "Uncategorized"
+            
+            # Ensure category exists for custom templates
+            self.category = await self._ensure_category_exists(template_category)
+            
             components = custom_template.data.get("components", [])
             for comp in components:
                 is_comp_deletable = comp.get("is_deletable", True)
@@ -260,6 +272,27 @@ class Subject:
                     reference_component,
                     widget.get("is_deletable", True),
                 )
+
+    async def _ensure_category_exists(self, category_name):
+        """Create category if it doesn't exist for the user and return the category name."""
+        if not category_name or category_name == "Uncategorized":
+            return category_name or "Uncategorized"
+        
+        # Check if category exists
+        existing_category = Category_db.objects(name=category_name, owner=self.owner).first()
+        if not existing_category:
+            # Create the category
+            from datetime import datetime, timezone
+            
+            new_category = Category_db(
+                name=category_name,
+                owner=self.owner,
+                created_at=datetime.now(timezone.utc)
+            )
+            new_category.save()
+            return category_name
+        
+        return existing_category.name
 
     async def get_full_data(self):
         """Fetch all data inside the subject, including its components and widgets with their arrays."""
@@ -281,13 +314,12 @@ class Subject:
                 widget_data = widget_doc.to_mongo().to_dict()
                 
                 # Add arrays based on widget type
-                if widget_doc.type == "table":
+                if widget_doc.widget_type == "table":
                     # Get columns array
                     columns_result = Arrays.get_array(
                         user_id=self.owner,
                         host_id=widget_doc.id,
                         host_type="widget",
-                        array_name=f"{widget_doc.name}_columns"
                     )
                     if columns_result["success"]:
                         widget_data["columns"] = columns_result["data"]
@@ -297,29 +329,26 @@ class Subject:
                         user_id=self.owner,
                         host_id=widget_doc.id,
                         host_type="widget",
-                        array_name=f"{widget_doc.name}_rows"
                     )
                     if rows_result["success"]:
                         widget_data["rows"] = rows_result["data"]
                         
-                elif widget_doc.type == "calendar":
+                elif widget_doc.widget_type == "calendar":
                     # Get events array
                     events_result = Arrays.get_array(
                         user_id=self.owner,
                         host_id=widget_doc.id,
                         host_type="widget",
-                        array_name=f"{widget_doc.name}_events"
                     )
                     if events_result["success"]:
                         widget_data["events"] = events_result["data"]
                         
-                elif widget_doc.type == "note":
+                elif widget_doc.widget_type == "note":
                     # Get tags array
                     tags_result = Arrays.get_array(
                         user_id=self.owner,
                         host_id=widget_doc.id,
                         host_type="widget",
-                        array_name=f"{widget_doc.name}_tags"
                     )
                     if tags_result["success"]:
                         widget_data["tags"] = tags_result["data"]
