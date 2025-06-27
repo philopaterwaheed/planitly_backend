@@ -5,7 +5,6 @@ import uuid
 from pytz import UTC  # type: ignore
 from datetime import datetime
 from dateutil import parser as date_parser
-import pytz
 import re
 
 ACCEPTED_OPERATIONS = {

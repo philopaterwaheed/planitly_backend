@@ -807,3 +807,45 @@ class Arrays:
             return {"success": True, "slice": slice_result}
         except Exception as e:
             return {"success": False, "message": f"Error slicing array: {e}"}
+
+    @staticmethod
+    def clear_array(user_id, host_id, host_type=None, array_name=None, array_id=None):
+        """Clear all elements from an array while keeping the array metadata with smart host detection and name/ID support."""
+        try:
+            # Get user by ID
+            user = User.objects(id=user_id).first()
+            if not user:
+                return {"success": False, "message": "User not found"}
+
+            # Get host object and type
+            host_object, detected_host_type = Arrays._get_host_object(host_id, host_type)
+            if not host_object:
+                return {"success": False, "message": "Invalid host ID"}
+
+            # Get array metadata by name or ID
+            array_metadata = Arrays._get_array_metadata_by_name_or_id(user, host_id, detected_host_type, array_name, array_id)
+            if not array_metadata:
+                identifier = f"ID '{array_id}'" if array_id else f"name '{array_name}'" if array_name else "default array"
+                return {"success": False, "message": f"Array with {identifier} not found for {detected_host_type} '{host_id}'"}
+
+            # Count elements for reporting
+            element_count = ArrayItem_db.objects(user=user, array_metadata=array_metadata).count()
+
+            # Delete all array elements
+            ArrayItem_db.objects(user=user, array_metadata=array_metadata).delete()
+
+            # Update length in array metadata to 0
+            array_metadata.length = 0
+            array_metadata.save()
+
+            return {
+                "success": True,
+                "message": f"Array '{array_metadata.name}' cleared successfully for {detected_host_type} '{host_id}'",
+                "elements_cleared": element_count,
+                "host_object": host_object.to_mongo().to_dict() if hasattr(host_object, 'to_mongo') else host_object.to_dict(),
+                "host_type": detected_host_type,
+                "array_name": array_metadata.name,
+                "array_id": str(array_metadata.id)
+            }
+        except Exception as e:
+            return {"success": False, "message": f"Error clearing array: {e}"}

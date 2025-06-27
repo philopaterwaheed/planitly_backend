@@ -185,11 +185,22 @@ class Widget:
                 data["alt_text"] = ""  # Optional alt text for accessibility
 
         elif widget_type == "chart":
-            # Validate chart widget structure
+            # Validate chart widget structure - can reference Array_type or Array_of_pairs
+            valid_component_types = ["Array_type", "Array_of_pairs"]
+            if reference_component.comp_type not in valid_component_types:
+                raise ValidationError(f"Chart widget must reference a component of type {valid_component_types}")
+
             if "chart_type" not in data:
                 data["chart_type"] = "bar"  # Default chart type
             if "data_points" not in data:
                 data["data_points"] = []  # Default to an empty list of data points
+            
+            # For Array_type components, add default configuration
+            if reference_component.comp_type == "Array_type":
+                if "value_key" not in data:
+                    data["value_key"] = "value"  # Default key for accessing array values
+                if "label_key" not in data:
+                    data["label_key"] = "index"  # Use array index as labels by default
 
         elif widget_type == "check_box":
             # Validate check_box widget structure

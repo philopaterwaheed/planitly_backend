@@ -1,4 +1,4 @@
-from mongoengine import Document, StringField, DictField, ReferenceField, NULLIFY, BooleanField
+from mongoengine import Document, StringField, DictField, ReferenceField, NULLIFY, BooleanField, ListField
 import uuid
 import datetime
 from .arrayItem import ArrayItem_db, ArrayMetadata, Arrays
@@ -34,12 +34,47 @@ class Component_db(Document):
     comp_type = StringField(required=True)  # Component type (e.g., Array_type, str, etc.)
     owner = StringField(required=True)
     is_deletable = BooleanField(default=True)
+    # Track which widgets reference this component
+    referenced_by_widgets = ListField(StringField(), default=list)
+    allowed_widget_type = StringField(required=True, default="any")  # Type of widgets that can reference this component
 
     meta = {'collection': 'components'}
 
+    def add_widget_reference(self, widget_id, widget_type):
+        """Add a widget reference to this component."""
+        # Check if the widget type is allowed to reference this component
+        if self.allowed_widget_type != "any" and widget_type != self.allowed_widget_type:
+            raise ValueError(f"Widget type '{widget_type}' is not allowed to reference this component. Only '{self.allowed_widget_type}' widgets are allowed.")
+        
+        reference_info = f"{widget_id}:{widget_type}"
+        if reference_info not in self.referenced_by_widgets:
+            self.referenced_by_widgets.append(reference_info)
+            self.save()
+
+    def remove_widget_reference(self, widget_id):
+        """Remove a widget reference from this component."""
+        self.referenced_by_widgets = [
+            ref for ref in self.referenced_by_widgets 
+            if not ref.startswith(f"{widget_id}:")
+        ]
+        self.save()
+
+    def get_referencing_widgets(self):
+        """Get list of widgets that reference this component."""
+        widgets = []
+        for ref in self.referenced_by_widgets:
+            if ":" in ref:
+                widget_id, widget_type = ref.split(":", 1)
+                widgets.append({"widget_id": widget_id, "widget_type": widget_type})
+        return widgets
+
+    def can_be_referenced_by_widget_type(self, widget_type):
+        """Check if a widget type can reference this component."""
+        return self.allowed_widget_type == "any" or self.allowed_widget_type == widget_type
+
 
 class Component:
-    def __init__(self, name, comp_type, data=None, id=None, host_subject=None, owner=None, is_deletable=True):
+    def __init__(self, name, comp_type, data=None, id=None, host_subject=None, owner=None, is_deletable=True, allowed_widget_type="any", referenced_by_widgets=None):
         self.name = name
         self.comp_type = comp_type
         self.data = data or PREDEFINED_COMPONENT_TYPES.get(comp_type, {})
@@ -47,6 +82,8 @@ class Component:
         self.host_subject = host_subject
         self.owner = owner
         self.is_deletable = is_deletable
+        self.allowed_widget_type = allowed_widget_type
+        self.referenced_by_widgets = referenced_by_widgets or []
 
     def to_json(self):
         return {
@@ -56,7 +93,9 @@ class Component:
             "data": self.data,
             "host_subject": self.host_subject,
             "owner": self.owner,
-            "is_deletable": self.is_deletable
+            "is_deletable": self.is_deletable,
+            "allowed_widget_type": self.allowed_widget_type,
+            "referenced_by_widgets": self.referenced_by_widgets
         }
 
     @staticmethod
@@ -68,7 +107,9 @@ class Component:
             comp_type=data["comp_type"],
             host_subject=data["host_subject"],
             owner=data.get("owner"),
-            is_deletable=data.get("is_deletable", True)
+            is_deletable=data.get("is_deletable", True),
+            allowed_widget_type=data.get("allowed_widget_type", "any"),
+            referenced_by_widgets=data.get("referenced_by_widgets", [])
         )
 
     def save_to_db(self):
@@ -79,7 +120,9 @@ class Component:
             data=self.data,
             comp_type=self.comp_type,
             owner=self.owner,
-            is_deletable=self.is_deletable
+            is_deletable=self.is_deletable,
+            allowed_widget_type=self.allowed_widget_type,
+            referenced_by_widgets=self.referenced_by_widgets
         )
         component_db.save()
 
@@ -129,7 +172,9 @@ class Component:
                 "comp_type": component_db.comp_type,
                 "host_subject": component_db.host_subject,
                 "owner": component_db.owner,
-                "is_deletable": component_db.is_deletable
+                "is_deletable": component_db.is_deletable,
+                "allowed_widget_type": component_db.allowed_widget_type,
+                "referenced_by_widgets": component_db.referenced_by_widgets
             })
         return None
     
@@ -141,6 +186,11 @@ class Component:
             if not array_result["success"]:
                 raise Exception(f"Error: {array_result['message']}")
             self.data = {**(self.data or {}), "items": array_result["array"] , "pagination": array_result["pagination"]}
+        
+        # Get referencing widgets info
+        component_db = Component_db.objects(id=self.id).first()
+        referencing_widgets = component_db.get_referencing_widgets() if component_db else []
+        
         return {
             "name": self.name,
             "id": self.id,
@@ -149,4 +199,6 @@ class Component:
             "host_subject": self.host_subject.id,
             "owner": self.owner,
             "is_deletable": self.is_deletable,
+            "referenced_by_widgets": referencing_widgets,
+            "allowed_widget_type": self.allowed_widget_type
         }
