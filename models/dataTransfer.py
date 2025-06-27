@@ -6,6 +6,7 @@ from pytz import UTC  # type: ignore
 from datetime import datetime
 from dateutil import parser as date_parser
 import pytz
+import re
 
 ACCEPTED_OPERATIONS = {
     "pair": ["update_key", "update_value"],
@@ -19,7 +20,8 @@ ACCEPTED_OPERATIONS = {
     "int": ["replace", "add", "multiply"],
     "str": ["replace"],
     "bool": ["replace", "toggle"],
-    "date": ["replace"]
+    "date": ["replace"],
+    "phone": ["replace", "update_country_code", "update_number"],
 }
 
 
@@ -373,6 +375,39 @@ class DataTransfer:
         except Exception as e:
             print(f"Error validating habit subject {subject_id}: {e}")
             return False
+
+    def _validate_phone_number(self, phone_data):
+        """Validate phone number dictionary structure and content"""
+        if not isinstance(phone_data, dict):
+            print("Phone number must be a dictionary")
+            return False
+        
+        # Only allow specific keys
+        allowed_keys = {"country_code", "number"}
+        if not set(phone_data.keys()).issubset(allowed_keys):
+            print(f"Phone number can only contain keys: {allowed_keys}")
+            return False
+        
+        country_code = phone_data.get("country_code", "")
+        number = phone_data.get("number", "")
+        
+        # Validate country code
+        if country_code and not re.match(r"^\+?[1-9]\d{0,3}$", country_code):
+            print("Invalid country code format. Must be 1-4 digits, optionally starting with +")
+            return False
+        
+        # Validate phone number
+        if number and not re.match(r"^[0-9]{4,14}$", number):
+            print("Invalid phone number format. Must be 4-14 digits")
+            return False
+        
+        # Validate total length
+        full_number = f"{country_code.replace('+', '')}{number}"
+        if full_number and (len(full_number) < 5 or len(full_number) > 15):
+            print("Complete phone number must be between 5-15 digits")
+            return False
+        
+        return True
 
     def _execute_pair_operation(self, target_component, source_value):
         """Handle operations specific to pair component type"""
@@ -833,9 +868,9 @@ class DataTransfer:
         return True
 
     def _execute_scalar_operation(self, target_component, source_value):
-        """Handle operations specific to scalar component types (int, str, bool, date)"""
+        """Handle operations specific to scalar component types (int, str, bool, date, phone)"""
         # Validate operation type
-        if self.operation not in ["replace", "add", "multiply", "toggle"]:
+        if self.operation not in ["replace", "add", "multiply", "toggle", "update_country_code", "update_number"]:
             print(f"Unsupported operation '{self.operation}' for {target_component.comp_type}.")
             return
 
@@ -858,9 +893,69 @@ class DataTransfer:
                 except (ValueError, TypeError):
                     print(f"Type mismatch: Expected ISO date string for '{target_component.comp_type}', got invalid format: {source_value}.")
                     return
+            elif target_component.comp_type == "phone":
+                # Validate phone number structure and content
+                if not self._validate_phone_number(source_value):
+                    return
                     
             target_component.data["item"] = source_value
             
+        elif self.operation == "update_country_code":
+            # Only valid for phone components
+            if target_component.comp_type != "phone":
+                print(f"Operation 'update_country_code' is only valid for phone components, not '{target_component.comp_type}'.")
+                return
+                
+            # Validate that current item is a dict with phone structure
+            if not isinstance(target_component.data.get("item"), dict):
+                print("Phone component data must be a dictionary with 'country_code' and 'number' fields.")
+                return
+                
+            # Validate country code format
+            if not isinstance(source_value, str):
+                print("Country code must be a string.")
+                return
+                
+            if source_value and not re.match(r"^\+?[1-9]\d{0,3}$", source_value):
+                print("Invalid country code format. Must be 1-4 digits, optionally starting with +")
+                return
+                
+            # Update country code
+            target_component.data["item"]["country_code"] = source_value
+            
+            # Validate the complete phone number after update
+            if not self._validate_phone_number(target_component.data["item"]):
+                print("Updated phone number failed validation.")
+                return
+                
+        elif self.operation == "update_number":
+            # Only valid for phone components
+            if target_component.comp_type != "phone":
+                print(f"Operation 'update_number' is only valid for phone components, not '{target_component.comp_type}'.")
+                return
+                
+            # Validate that current item is a dict with phone structure
+            if not isinstance(target_component.data.get("item"), dict):
+                print("Phone component data must be a dictionary with 'country_code' and 'number' fields.")
+                return
+                
+            # Validate number format
+            if not isinstance(source_value, str):
+                print("Phone number must be a string.")
+                return
+                
+            if source_value and not re.match(r"^[0-9]{4,14}$", source_value):
+                print("Invalid phone number format. Must be 4-14 digits")
+                return
+                
+            # Update number
+            target_component.data["item"]["number"] = source_value
+            
+            # Validate the complete phone number after update
+            if not self._validate_phone_number(target_component.data["item"]):
+                print("Updated phone number failed validation.")
+                return
+                
         elif self.operation == "add":
             # Check if operation makes sense for the type
             if not isinstance(target_component.data["item"], (int, float)):

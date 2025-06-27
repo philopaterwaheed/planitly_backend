@@ -28,7 +28,23 @@ def validate_component_data(comp_type, data):
     elif comp_type == "Array_of_pairs":
         if "type" not in data or not isinstance(data["type"], dict):
             raise HTTPException(status_code=400, detail="Component data for type 'Array_of_pairs' must have 'type' dict.")
-    # Add more as needed
+    elif comp_type == "phone":
+        if "item" not in data:
+            raise HTTPException(
+                status_code=400,
+                detail="Component data for type 'phone' must have 'item' field."
+            )
+        item = data["item"]
+        if not isinstance(item, dict):
+            raise HTTPException(
+                status_code=400,
+                detail="Component data['item'] for 'phone' must be a dictionary."
+            )
+        if "country_code" not in item or "number" not in item:
+            raise HTTPException(
+                status_code=400,
+                detail="Phone component must have 'country_code' and 'number' fields."
+            )
 
 def validate_widget_data(widget_type, data):
     """Validate widget data using Widget.validate_widget_type logic."""

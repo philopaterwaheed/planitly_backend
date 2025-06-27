@@ -9,6 +9,12 @@ PREDEFINED_COMPONENT_TYPES = {
     "str": {"item": ""},
     "bool": {"item": False},
     "date": {"item": datetime.datetime.now().isoformat()},
+    "phone": {
+        "item": {
+            "country_code": "",
+            "number": ""
+        }
+    },
     "Array_type": {"type": "int"},  # Array of integers
     "Array_generic": {"type": "any"},  # Array of any type
     "pair": {"key": "str", "value": "any"},  # Pair with string key and any type value
