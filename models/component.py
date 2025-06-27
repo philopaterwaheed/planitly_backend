@@ -6,6 +6,7 @@ from .arrayItem import ArrayItem_db, ArrayMetadata, Arrays
 # Predefined data and widget types
 PREDEFINED_COMPONENT_TYPES = {
     "int": {"item": 0},
+    "double": {"item": 0.0},
     "str": {"item": ""},
     "bool": {"item": False},
     "date": {"item": datetime.datetime.now().isoformat()},
