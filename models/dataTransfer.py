@@ -17,6 +17,7 @@ ACCEPTED_OPERATIONS = {
     "Array_of_dates": ["append", "remove_back", "remove_front", "delete_at", "push_at", "update_at"],
     "Array_of_objects": ["append", "remove_back", "remove_front", "delete_at", "push_at", "update_at"],
     "int": ["replace", "add", "multiply"],
+    "double": ["replace", "add", "multiply"],
     "str": ["replace"],
     "bool": ["replace", "toggle"],
     "date": ["replace"],
@@ -867,7 +868,7 @@ class DataTransfer:
         return True
 
     def _execute_scalar_operation(self, target_component, source_value):
-        """Handle operations specific to scalar component types (int, str, bool, date, phone)"""
+        """Handle operations specific to scalar component types (int, str, bool, date, phone, double)"""
         # Validate operation type
         if self.operation not in ["replace", "add", "multiply", "toggle", "update_country_code", "update_number"]:
             print(f"Unsupported operation '{self.operation}' for {target_component.comp_type}.")
@@ -878,6 +879,9 @@ class DataTransfer:
             # Type check the new value based on component type
             if target_component.comp_type == "int" and not isinstance(source_value, int):
                 print(f"Type mismatch: Expected int for '{target_component.comp_type}', got {type(source_value).__name__}.")
+                return
+            elif target_component.comp_type == "double" and not isinstance(source_value, (int, float)):
+                print(f"Type mismatch: Expected double (float/int) for '{target_component.comp_type}', got {type(source_value).__name__}.")
                 return
             elif target_component.comp_type == "str" and not isinstance(source_value, str):
                 print(f"Type mismatch: Expected string for '{target_component.comp_type}', got {type(source_value).__name__}.")
@@ -956,7 +960,7 @@ class DataTransfer:
                 return
                 
         elif self.operation == "add":
-            # Check if operation makes sense for the type
+            # Check if operation makes sense for the type 
             if not isinstance(target_component.data["item"], (int, float)):
                 print(f"Cannot perform 'add' operation on non-numeric type: {type(target_component.data['item']).__name__}.")
                 return
