@@ -1914,3 +1914,90 @@ async def search_in_widget_array_by_array_id(
         raise HTTPException(
             status_code=500, detail=f"An unexpected error occurred: {str(e)}"
         )
+
+@router.get("/{widget_id}/chart-data", dependencies=[Depends(verify_device)], status_code=status.HTTP_200_OK)
+async def get_chart_data(
+    widget_id: str,
+    user_device: tuple = Depends(verify_device)
+):
+    """Get chart data from the referenced Array_type component."""
+    current_user = user_device[0]
+    try:
+        widget = Widget_db.objects.get(id=widget_id)
+
+        if widget.owner != current_user.id and not current_user.admin:
+            raise HTTPException(
+                status_code=403, detail="Not authorized to access this widget")
+
+        if widget.widget_type != "chart":
+            raise HTTPException(
+                status_code=400, detail="This endpoint is only for chart widgets")
+
+        if not widget.reference_component:
+            raise HTTPException(
+                status_code=400, detail="This chart widget does not reference a component")
+
+        # Get the referenced component
+        from models.component import Component_db
+        from models.arrayItem import Arrays
+        
+        component = Component_db.objects.get(id=widget.reference_component)
+        
+        if component.comp_type == "Array_type":
+            # Get array data for Array_type component
+            array_result = Arrays.get_array(
+                user_id=current_user.id,
+                host_id=component.id,
+                host_type="component"
+            )
+            
+            if array_result["success"]:
+                chart_data = []
+                for index, value in enumerate(array_result["data"]):
+                    chart_data.append({
+                        "label": f"Item {index + 1}",
+                        "value": value,
+                        "index": index
+                    })
+                
+                return {
+                    "component_id": str(component.id),
+                    "component_name": component.name,
+                    "component_type": component.comp_type,
+                    "chart_data": chart_data,
+                    "widget_config": widget.data
+                }
+            else:
+                raise HTTPException(
+                    status_code=500, detail=f"Failed to get array data: {array_result['message']}")
+        
+        elif component.comp_type == "Array_of_pairs":
+            # Handle Array_of_pairs for backward compatibility
+            array_result = Arrays.get_array(
+                user_id=current_user.id,
+                host_id=component.id,
+                host_type="component"
+            )
+            
+            if array_result["success"]:
+                return {
+                    "component_id": str(component.id),
+                    "component_name": component.name,
+                    "component_type": component.comp_type,
+                    "chart_data": array_result["data"],
+                    "widget_config": widget.data
+                }
+            else:
+                raise HTTPException(
+                    status_code=500, detail=f"Failed to get array data: {array_result['message']}")
+        
+        else:
+            raise HTTPException(
+                status_code=400, detail=f"Unsupported component type for chart: {component.comp_type}")
+            
+    except DoesNotExist:
+        raise HTTPException(status_code=404, detail="Widget or component not found")
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"An unexpected error occurred: {str(e)}"
+        )

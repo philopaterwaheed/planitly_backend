@@ -44,8 +44,8 @@ async def create_default_subjects_for_user(user_id):
                     comp_data["data"]["item"] = datetime.datetime.now().isoformat()
 
                 await subject.add_component(
-                    component_name=comp_data["name"],
-                    component_type=comp_data["type"],
+                    name=comp_data["name"],
+                    comp_type=comp_data["type"],
                     data=comp_data["data"],
                     is_deletable=comp_data.get("is_deletable", True)
                 )

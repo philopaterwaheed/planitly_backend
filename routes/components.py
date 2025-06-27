@@ -18,6 +18,7 @@ async def create_component(data: dict, user_device: tuple = Depends(verify_devic
         name = data.get("name")
         comp_type = data.get("type")
         host_subject_id = data.get("host_subject")
+        allowed_widget_type = data.get("allowed_widget_type", "any")  # New field
 
         # Validate required fields
         if not name or not comp_type or not host_subject_id:
@@ -30,38 +31,31 @@ async def create_component(data: dict, user_device: tuple = Depends(verify_devic
                 detail=f"Invalid component type '{comp_type}'. Allowed types are: {', '.join(PREDEFINED_COMPONENT_TYPES.keys())}."
             )
 
-        initial_data = data.get("data", PREDEFINED_COMPONENT_TYPES[comp_type])
-        host_subject = Subject_db.objects(id=host_subject_id).first()
+        # Load the host subject
+        host_subject = Subject.load_from_db(host_subject_id)
         if not host_subject:
             raise HTTPException(status_code=404, detail="Host subject not found.")
 
+        # Check authorization
         if current_user.id != host_subject.owner and not current_user.admin:
             raise HTTPException(status_code=403, detail="Not authorized to create this component.")
 
-        # Create the component
-        component_data = {
-            "id": component_id,
-            "name": name,
-            "host_subject": host_subject_id,
-            "comp_type": comp_type,
-            "owner": current_user.id
-        }
-        if initial_data is not None:
-            component_data["data"] = initial_data
+        # Get initial data
+        initial_data = data.get("data", PREDEFINED_COMPONENT_TYPES[comp_type])
 
-        component = Component_db(**component_data)
+        # Use the subject's add_component method
+        result = await host_subject.add_component(
+            component_id=component_id,
+            name=name,
+            comp_type=comp_type,
+            owner=current_user.id,
+            data=initial_data,
+            allowed_widget_type=allowed_widget_type
+        )
 
-        # Handle Array_type and Array_generic components
-        if comp_type in ["Array_type", "Array_generic", "Array_of_pairs"]:
-            array_metadata_result = Arrays.create_array(
-                user_id=current_user.id,
-                component_id=component_id,
-                array_name=name,
-            )
-            if not array_metadata_result["success"]:
-                raise HTTPException(status_code=500, detail=array_metadata_result["message"])
+        if not result["success"]:
+            raise HTTPException(status_code=500, detail=result["message"])
 
-        component.save()
         return {"message": "Component created successfully", "id": component_id}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")

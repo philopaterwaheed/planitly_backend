@@ -80,43 +80,87 @@ class Subject:
         self.times_visited['count'] = min(self.times_visited['count'] + 1, 10000)
         self.last_visited = now
 
-    async def add_component(self, component_name, component_type, data=None, is_deletable=True):
-        if component_type in PREDEFINED_COMPONENT_TYPES:
-            component = Component(
-                name=component_name,
-                host_subject=self.id,
-                owner=self.owner,
-                comp_type=component_type,
-                data=data,
-                is_deletable=is_deletable
-            )
-            component.host_subject = self.id
+    async def add_component(self,name, comp_type , owner = None, component_id= None ,  data=None, allowed_widget_type="any", is_deletable=True):
+        """Add a component to this subject."""
+        try:
+            # Validate component type
+            if comp_type not in PREDEFINED_COMPONENT_TYPES:
+                return {
+                    "success": False,
+                    "message": f"Invalid component type '{comp_type}'. Allowed types are: {', '.join(PREDEFINED_COMPONENT_TYPES.keys())}."
+                }
 
-            component.save_to_db()
-            # add a reference to the component in the subject if saved
-            self.components.append(component.id)
+            # Get initial data if not provided
+            if data is None:
+                data = PREDEFINED_COMPONENT_TYPES[comp_type]
+
+            if not component_id:
+                # Generate a new component ID if not provided
+                component_id = str(uuid.uuid4())
+            # Create the component in database
+            component_data = {
+                "id": component_id,
+                "name": name,
+                "host_subject": self.id,
+                "comp_type": comp_type,
+                "owner": owner or self.owner ,
+                "data": data,
+                "is_deletable": is_deletable,
+                "referenced_by_widgets": [],  # Initialize as empty list
+                "allowed_widget_type": allowed_widget_type 
+            }
+
+            component = Component_db(**component_data)
+
+            component.save()
 
             # Handle Array_type and Array_generic components
-            if component.comp_type in ["Array_type", "Array_generic", "Array_of_pairs"]:
+            if comp_type in ["Array_type", "Array_generic", "Array_of_pairs"]:
                 array_metadata_result = Arrays.create_array(
-                    user_id=component.owner,
-                    host_id=component.id,
-                    array_name=component.name,
-                    host_type="component",
-                    initial_elements=[]
+                    user_id=owner,
+                    host_id=component_id,
+                    array_name=name,
                 )
                 if not array_metadata_result["success"]:
-                    raise Exception(array_metadata_result["message"])
-            self.save_to_db()
-        else:
-            print(f"Component type '{component_type}' is not defined.")
-        return component
+                    return {
+                        "success": False,
+                        "message": array_metadata_result["message"]
+                    }
+
+            # Add component to subject's components list
+            if component_id not in self.components:
+                self.components.append(component_id)
+                self.save_to_db()
+
+            return {
+                "success": True,
+                "message": "Component created successfully",
+                "component_id": component_id
+            }
+
+        except Exception as e:
+            return {
+                "success": False,
+                "message": f"Error creating component: {str(e)}"
+            }
 
     async def add_widget(self, widget_name, widget_type, data=None, reference_component=None, is_deletable=True):
         try:
+            # Get reference component object if ID is provided
+            reference_component_obj = None
+            if reference_component:
+                from .component import Component_db
+                reference_component_obj = Component_db.objects(id=reference_component).first()
+                if not reference_component_obj:
+                    raise ValidationError(f"Reference component {reference_component} not found")
+                
+                # Check if the widget type is allowed to reference this component
+                if not reference_component_obj.can_be_referenced_by_widget_type(widget_type):
+                    raise ValidationError(f"Widget type '{widget_type}' is not allowed to reference this component. Only '{reference_component_obj.allowed_widget_type}' widgets are allowed.")
+
             # Validate widget type and data
             validated_data = Widget.validate_widget_type(
-                widget_type, reference_component, data)
+                widget_type, reference_component_obj, data)
 
             widget = Widget(
                 name=widget_name,
@@ -129,6 +173,10 @@ class Subject:
             )
 
             widget.save_to_db()
+            
+            # Track widget reference in component if applicable
+            if reference_component_obj:
+                reference_component_obj.add_widget_reference(widget.id, widget_type)
             
             # Create associated arrays for widget types that need them
             await self._create_widget_arrays(widget, widget_type)
