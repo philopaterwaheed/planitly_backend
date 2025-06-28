@@ -33,7 +33,6 @@ async def create_category(
 
         # Create the category
         category = Category_db(
-            id=str(uuid.uuid4()), 
             name=category_name, 
             owner=current_user.id,
             created_at=datetime.now(timezone.utc)
@@ -55,7 +54,6 @@ async def create_category(
 
         return {
             "message": "Category created successfully.",
-            "id": category.id,
             "name": category.name,
             "created_at": category.created_at.isoformat(),
             "subjects_updated": updated_subjects
@@ -64,12 +62,18 @@ async def create_category(
         raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
 
 
-@router.put("/{category_id}", status_code=status.HTTP_200_OK)
-async def update_category(category_id: str, data: dict, user_device: tuple = Depends(verify_device)):
+@router.put("/{category_name}", status_code=status.HTTP_200_OK)
+async def update_category(category_name: str, data: dict, user_device: tuple = Depends(verify_device)):
     """Update a category's name."""
     current_user = user_device[0]
     try:
-        category = Category_db.objects.get(id=category_id, owner=current_user.id)
+        # Decode URL-encoded category names (e.g., spaces as %20)
+        decoded_category_name = decode_name_from_url(category_name)
+        
+        category = Category_db.objects(name=decoded_category_name, owner=current_user.id).first()
+        if not category:
+            raise HTTPException(status_code=404, detail=f"Category '{decoded_category_name}' not found.")
+            
         new_name = data.get("name")
         if not new_name:
             raise HTTPException(status_code=400, detail="New category name is required.")
@@ -79,7 +83,7 @@ async def update_category(category_id: str, data: dict, user_device: tuple = Dep
             raise HTTPException(status_code=400, detail="Category with this name already exists.")
 
         # Update all subjects in the old category to the new category name
-        Subject_db.objects(category=category.name, owner=current_user.id).update(category=new_name)
+        Subject_db.objects(category=decoded_category_name, owner=current_user.id).update(category=new_name)
         category.update(name=new_name)
         return {"message": "Category updated successfully."}
     except Category_db.DoesNotExist:

@@ -12,7 +12,6 @@ class Category_db(Document):
 
     def to_json(self):
         return {
-            "id": self.id,
             "name": self.name,
             "owner": str(self.owner.id),
             "created_at": self.created_at.isoformat() if self.created_at else None,

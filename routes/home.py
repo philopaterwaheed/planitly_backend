@@ -134,6 +134,24 @@ async def get_home_page_data(user_device: tuple = Depends(verify_device)):
         total_categories = Category_db.objects(owner=current_user.id).count()
         total_connections = Connection_db.objects(owner=current_user.id).count()
 
+        # Get finance tracker full data from default subjects
+        finance_tracker_data = None
+        try:
+            # Get the finance tracker ID from user's default subjects map
+            default_subjects = current_user.default_subjects or {}
+            finance_tracker_id = default_subjects["financial_tracker"] if "financial_tracker" in default_subjects else None
+            
+            if finance_tracker_id:
+                # Fetch the finance tracker subject
+                finance_subject_db = Subject_db.objects(id=finance_tracker_id, owner=current_user.id).first()
+                if finance_subject_db:
+                    from models import Subject
+                    finance_subject = Subject.from_db(finance_subject_db)
+                    finance_tracker_data = await finance_subject.get_full_data()
+        except Exception as finance_error:
+            print(f"Warning: Could not load finance tracker data: {finance_error}")
+            finance_tracker_data = None
+
         return {
             "date": today,
             "user_stats": {
@@ -159,7 +177,8 @@ async def get_home_page_data(user_device: tuple = Depends(verify_device)):
             "templates": {
                 "predefined": predefined_templates[:5],  # Top 5 predefined
                 "custom": custom_templates
-            }
+            },
+            "finance_tracker": finance_tracker_data
         }
 
 
