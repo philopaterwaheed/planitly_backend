@@ -27,6 +27,7 @@ class HabitTrackerManager:
                 template="habit_tracker"
             ).first()
         
+        print (habit_tracker)
         return habit_tracker
 
     @staticmethod
@@ -39,14 +40,23 @@ class HabitTrackerManager:
         daily_status_comp = None
         habits_comp = None
         
-        for comp in habit_tracker.components:
-            if comp.name == "current_date":
-                current_date_comp = comp
-            elif comp.name == "daily_status":
-                daily_status_comp = comp
-            elif comp.name == "habits":
-                habits_comp = comp
+        # Search for components directly from the database where host is habit_tracker
+        current_date_comp = Component_db.objects(
+            host_subject=habit_tracker.id,
+            name="current_date"
+        ).first()
         
+        daily_status_comp = Component_db.objects(
+            host_subject=habit_tracker.id,
+            name="daily_status"
+        ).first()
+        
+        habits_comp = Component_db.objects(
+            host_subject=habit_tracker.id,
+            name="habits"
+        ).first()
+        
+        print(current_date_comp, daily_status_comp, habits_comp)
         if not all([current_date_comp, daily_status_comp, habits_comp]):
             raise ValueError("Habit tracker components not found")
         
