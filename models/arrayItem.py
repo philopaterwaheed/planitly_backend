@@ -11,6 +11,7 @@ from mongoengine.errors import ValidationError
 class ArrayMetadata(Document):
     """Array metadata model that can be hosted by either a Component or Widget."""
     user = ReferenceField(User, required=True)
+    subject = ReferenceField("Subject_db", required=False)  # Reference to subject for subject-scoped uniqueness
     name = StringField(required=True)
     
     # Host can be either a component or a widget (mutually exclusive)
@@ -23,16 +24,21 @@ class ArrayMetadata(Document):
     meta = {
         'collection': 'array_metadata',
         'indexes': [
-            # Unique constraint on (user, name, host_component) and (user, name, host_widget)
+            # Subject-based uniqueness when subject is present
+            {'fields': ['subject', 'name', 'host_component'], 'unique': True, 'sparse': True},
+            {'fields': ['subject', 'name', 'host_widget'], 'unique': True, 'sparse': True},
+            # User-based uniqueness as fallback when subject is not present
             {'fields': ['user', 'name', 'host_component'], 'unique': True, 'sparse': True},
             {'fields': ['user', 'name', 'host_widget'], 'unique': True, 'sparse': True},
             {'fields': ['host_component']},
             {'fields': ['host_widget']},
+            {'fields': ['user']}, 
+            {'fields': ['subject']},
         ]
     }
 
     def clean(self):
-        """Ensure exactly one host is specified."""
+        """Ensure exactly one host is specified and handle uniqueness validation."""
         has_component = bool(self.host_component)
         has_widget = bool(self.host_widget)
         
@@ -41,6 +47,56 @@ class ArrayMetadata(Document):
         
         if has_component and has_widget:
             raise ValidationError("ArrayMetadata cannot have both host_component and host_widget")
+        
+        # If subject is present, check subject-based uniqueness
+        if self.subject:
+            # Check for existing array with same subject, name, and host
+            if has_component:
+                query = ArrayMetadata.objects(
+                    subject=self.subject, 
+                    name=self.name, 
+                    host_component=self.host_component
+                )
+                if self.id:
+                    query = query.exclude(id=self.id)
+                existing = query.first()
+            else:  # has_widget
+                query = ArrayMetadata.objects(
+                    subject=self.subject, 
+                    name=self.name, 
+                    host_widget=self.host_widget
+                )
+                if self.id:
+                    query = query.exclude(id=self.id)
+                existing = query.first()
+            
+            if existing:
+                raise ValidationError(f"Array with name '{self.name}' already exists in this subject")
+        else:
+            # Fallback to user-based uniqueness when no subject
+            if has_component:
+                query = ArrayMetadata.objects(
+                    user=self.user, 
+                    name=self.name, 
+                    host_component=self.host_component,
+                    subject=None
+                )
+                if self.id:
+                    query = query.exclude(id=self.id)
+                existing = query.first()
+            else:  # has_widget
+                query = ArrayMetadata.objects(
+                    user=self.user, 
+                    name=self.name, 
+                    host_widget=self.host_widget,
+                    subject=None
+                )
+                if self.id:
+                    query = query.exclude(id=self.id)
+                existing = query.first()
+            
+            if existing:
+                raise ValidationError(f"Array with name '{self.name}' already exists for this user")
 
     def get_host_id(self):
         """Get the host ID regardless of whether it's a component or widget."""
@@ -54,12 +110,12 @@ class ArrayMetadata(Document):
             return 'widget'
         return None
 
-    @staticmethod
     def to_dict(self):
         """Convert ArrayMetadata document to dictionary."""
         return {
             "id": str(self.id),
             "user_id": str(self.user.id),
+            "subject_id": str(self.subject.id) if self.subject else None,
             "name": self.name,
             "host_component": self.host_component,
             "host_widget": self.host_widget,
@@ -117,14 +173,22 @@ class Arrays:
             return False, f"Unable to determine value size: {str(e)}"
 
     @staticmethod
-    def _get_array_metadata(user, host_id, host_type):
-        """Get array metadata by host ID and type."""
-        if host_type == 'component':
-            return ArrayMetadata.objects(user=user, host_component=str(host_id)).first()
-        elif host_type == 'widget':
-            return ArrayMetadata.objects(user=user, host_widget=str(host_id)).first()
+    def _get_array_metadata(user, host_id, host_type, subject=None):
+        """Get array metadata by host ID and type with subject-aware lookup."""
+        if subject:
+            # Subject-based lookup when subject is available
+            if host_type == 'component':
+                return ArrayMetadata.objects(subject=subject, host_component=str(host_id)).first()
+            elif host_type == 'widget':
+                return ArrayMetadata.objects(subject=subject, host_widget=str(host_id)).first()
         else:
-            raise ValueError("host_type must be 'component' or 'widget'")
+            # User-based lookup as fallback
+            if host_type == 'component':
+                return ArrayMetadata.objects(user=user, host_component=str(host_id), subject=None).first()
+            elif host_type == 'widget':
+                return ArrayMetadata.objects(user=user, host_widget=str(host_id), subject=None).first()
+        
+        raise ValueError("host_type must be 'component' or 'widget'")
 
     @staticmethod
     def _detect_host_type(host_id):
@@ -148,44 +212,47 @@ class Arrays:
 
     @staticmethod
     def _get_host_object(host_id, host_type=None):
-        """Get the complete host object (Component or Widget)."""
+        """Get the complete host object (Component or Widget) and its subject."""
         try:
             if not host_type:
                 host_type = Arrays._detect_host_type(host_id)
                 if not host_type:
-                    return None, None
+                    return None, None, None
             
             if host_type == 'component':
                 from .component import Component_db
                 host = Component_db.objects(id=str(host_id)).first()
-                return host, 'component'
+                if host:
+                    return host, 'component', host.host_subject
             elif host_type == 'widget':
                 from .widget import Widget_db
                 host = Widget_db.objects(id=str(host_id)).first()
-                return host, 'widget'
-            else:
-                return None, None
+                if host:
+                    return host, 'widget', host.host_subject
+            
+            return None, None, None
         except Exception:
-            return None, None
+            return None, None, None
 
     @staticmethod
     def create_array(user_id, host_id, array_name, host_type=None, initial_elements=None):
-        """Create a new array for a user with smart host detection."""
+        """Create a new array for a user with smart host detection and subject-aware uniqueness."""
         try:
             # Get user by ID
             user = User.objects(id=user_id).first()
             if not user:
                 return {"success": False, "message": "User not found"}
 
-            # Get host object and type
-            host_object, detected_host_type = Arrays._get_host_object(host_id, host_type)
+            # Get host object, type, and subject
+            host_object, detected_host_type, subject = Arrays._get_host_object(host_id, host_type)
             if not host_object:
                 return {"success": False, "message": "Invalid host ID - not a component or widget"}
 
-            # Check if array already exists for this host and array name
-            existing_array = Arrays._get_array_metadata_by_name(user, host_id, detected_host_type, array_name)
+            # Check if array already exists with subject-aware uniqueness
+            existing_array = Arrays._get_array_metadata_by_name(user, host_id, detected_host_type, array_name, subject)
             if existing_array:
-                return {"success": False, "message": f"Array '{array_name}' already exists for this {detected_host_type}"}
+                scope = "subject" if subject else "user"
+                return {"success": False, "message": f"Array '{array_name}' already exists for this {detected_host_type} in the {scope}"}
 
             # Check initial elements size
             if initial_elements:
@@ -201,6 +268,7 @@ class Arrays:
             # Create array metadata
             array_metadata = ArrayMetadata(
                 user=user,
+                subject=subject,  # Set subject if available
                 name=array_name
             )
             
@@ -235,27 +303,40 @@ class Arrays:
                 "success": True, 
                 "message": f"Array '{array_name}' created successfully for {detected_host_type}",
                 "host_object": host_object.to_mongo().to_dict() if hasattr(host_object, 'to_mongo') else host_object.to_dict(),
-                "host_type": detected_host_type
+                "host_type": detected_host_type,
+                "subject_id": str(subject.id) if subject else None
             }
         except Exception as e:
             return {"success": False, "message": f"Error creating array: {e}"}
 
     @staticmethod
-    def _get_array_metadata_by_name(user, host_id, host_type, array_name):
-        """Get array metadata by host ID, type, and array name."""
-        if host_type == 'component':
-            return ArrayMetadata.objects(user=user, host_component=str(host_id), name=array_name).first()
-        elif host_type == 'widget':
-            return ArrayMetadata.objects(user=user, host_widget=str(host_id), name=array_name).first()
+    def _get_array_metadata_by_name(user, host_id, host_type, array_name, subject=None):
+        """Get array metadata by host ID, type, and array name with subject-aware uniqueness."""
+        if subject:
+            # Subject-based lookup when subject is available
+            if host_type == 'component':
+                return ArrayMetadata.objects(subject=subject, host_component=str(host_id), name=array_name).first()
+            elif host_type == 'widget':
+                return ArrayMetadata.objects(subject=subject, host_widget=str(host_id), name=array_name).first()
         else:
-            raise ValueError("host_type must be 'component' or 'widget'")
+            # User-based lookup as fallback
+            if host_type == 'component':
+                return ArrayMetadata.objects(user=user, host_component=str(host_id), name=array_name, subject=None).first()
+            elif host_type == 'widget':
+                return ArrayMetadata.objects(user=user, host_widget=str(host_id), name=array_name, subject=None).first()
+        
+        raise ValueError("host_type must be 'component' or 'widget'")
 
     @staticmethod
-    def _get_array_metadata_by_name_or_id(user, host_id, host_type, array_name=None, array_id=None):
-        """Get array metadata by host ID, type, and either array name or array ID."""
+    def _get_array_metadata_by_name_or_id(user, host_id, host_type, array_name=None, array_id=None, subject=None):
+        """Get array metadata by host ID, type, and either array name or array ID with subject-aware lookup."""
         if array_id:
             # If array_id is provided, use it directly
-            metadata = ArrayMetadata.objects(id=array_id, user=user).first()
+            if subject:
+                metadata = ArrayMetadata.objects(id=array_id, subject=subject).first()
+            else:
+                metadata = ArrayMetadata.objects(id=array_id, user=user, subject=None).first()
+            
             if metadata:
                 # Verify it belongs to the correct host
                 if host_type == 'component' and metadata.host_component == str(host_id):
@@ -265,30 +346,31 @@ class Arrays:
             return None
         elif array_name:
             # Use existing name-based lookup
-            return Arrays._get_array_metadata_by_name(user, host_id, host_type, array_name)
+            return Arrays._get_array_metadata_by_name(user, host_id, host_type, array_name, subject)
         else:
             # Neither provided, use default array lookup
-            return Arrays._get_array_metadata(user, host_id, host_type)
+            return Arrays._get_array_metadata(user, host_id, host_type, subject)
 
     @staticmethod
     def get_array_by_name(user_id, host_id, array_name=None, host_type=None, page=0, page_size=100, array_id=None):
-        """Get array by name or ID with smart host detection."""
+        """Get array by name or ID with smart host detection and subject-aware lookup."""
         try:
             # Get user by ID
             user = User.objects(id=user_id).first()
             if not user:
                 return {"success": False, "message": "User not found"}
 
-            # Get host object and type
-            host_object, detected_host_type = Arrays._get_host_object(host_id, host_type)
+            # Get host object, type, and subject
+            host_object, detected_host_type, subject = Arrays._get_host_object(host_id, host_type)
             if not host_object:
                 return {"success": False, "message": "Invalid host ID"}
 
-            # Get array metadata by name or ID
-            array_metadata = Arrays._get_array_metadata_by_name_or_id(user, host_id, detected_host_type, array_name, array_id)
+            # Get array metadata by name or ID with subject-aware lookup
+            array_metadata = Arrays._get_array_metadata_by_name_or_id(user, host_id, detected_host_type, array_name, array_id, subject)
             if not array_metadata:
                 identifier = f"ID '{array_id}'" if array_id else f"name '{array_name}'"
-                return {"success": False, "message": f"Array with {identifier} not found for {detected_host_type} '{host_id}'"}
+                scope = "subject" if subject else "user"
+                return {"success": False, "message": f"Array with {identifier} not found for {detected_host_type} '{host_id}' in {scope}"}
 
             # Get total count for pagination info
             total_count = ArrayItem_db.objects(user=user, array_metadata=array_metadata).count()
@@ -318,6 +400,7 @@ class Arrays:
                 "host_object": host_object.to_mongo().to_dict() if hasattr(host_object, 'to_mongo') else host_object.to_dict(),
                 "host_type": detected_host_type,
                 "host_id": str(host_id),
+                "subject_id": str(subject.id) if subject else None,
                 "array_name": array_metadata.name,
                 "array_id": str(array_metadata.id),
                 "pagination": {
@@ -334,22 +417,23 @@ class Arrays:
 
     @staticmethod
     def get_array(user_id, host_id, host_type=None, page=0, page_size=100):
-        """Get array with smart host detection."""
+        """Get array with smart host detection and subject-aware lookup."""
         try:
             # Get user by ID
             user = User.objects(id=user_id).first()
             if not user:
                 return {"success": False, "message": "User not found"}
 
-            # Get host object and type
-            host_object, detected_host_type = Arrays._get_host_object(host_id, host_type)
+            # Get host object, type, and subject
+            host_object, detected_host_type, subject = Arrays._get_host_object(host_id, host_type)
             if not host_object:
                 return {"success": False, "message": "Invalid host ID"}
 
-            # Get array metadata
-            array_metadata = Arrays._get_array_metadata(user, host_id, detected_host_type)
+            # Get array metadata with subject-aware lookup
+            array_metadata = Arrays._get_array_metadata(user, host_id, detected_host_type, subject)
             if not array_metadata:
-                return {"success": False, "message": f"Array not found for {detected_host_type} '{host_id}'"}
+                scope = "subject" if subject else "user"
+                return {"success": False, "message": f"Array not found for {detected_host_type} '{host_id}' in {scope}"}
 
             # Get total count for pagination info
             total_count = ArrayItem_db.objects(user=user, array_metadata=array_metadata).count()
@@ -379,6 +463,7 @@ class Arrays:
                 "host_object": host_object.to_mongo().to_dict() if hasattr(host_object, 'to_mongo') else host_object.to_dict(),
                 "host_type": detected_host_type,
                 "host_id": str(host_id),
+                "subject_id": str(subject.id) if subject else None,
                 "pagination": {
                     "page": page,
                     "page_size": page_size,
@@ -392,23 +477,25 @@ class Arrays:
             return {"success": False, "message": f"Error retrieving array: {e}"}
 
     @staticmethod
-    def get_entire_array(user_id, component_id):
+    def get_entire_array(user_id, host_id, host_type=None, array_name=None, array_id=None):
+        """Get entire array with subject-aware lookup and batch processing for large arrays."""
         try:
             # Get user by ID
             user = User.objects(id=user_id).first()
             if not user:
                 return {"success": False, "message": "User not found"}
 
-            # Get host object
-            host_object, host_type = Arrays._get_host_object(component_id)
+            # Get host object, type, and subject
+            host_object, detected_host_type, subject = Arrays._get_host_object(host_id, host_type)
             if not host_object:
-                return {"success": False, "message": "Invalid component ID"}
+                return {"success": False, "message": "Invalid host ID"}
 
-            # Get array metadata
-            array_metadata = ArrayMetadata.objects(
-                user=user, host_component=str(component_id)).first()
+            # Get array metadata with subject-aware lookup
+            array_metadata = Arrays._get_array_metadata_by_name_or_id(user, host_id, detected_host_type, array_name, array_id, subject)
             if not array_metadata:
-                return {"success": False, "message": f"Array '{component_id}' not found"}
+                identifier = f"ID '{array_id}'" if array_id else f"name '{array_name}'" if array_name else "default array"
+                scope = "subject" if subject else "user"
+                return {"success": False, "message": f"Array with {identifier} not found for {detected_host_type} '{host_id}' in {scope}"}
 
             # Get total count
             total_count = ArrayItem_db.objects(
@@ -431,30 +518,34 @@ class Arrays:
                 "success": True, 
                 "array": result_array,
                 "host_object": host_object.to_mongo().to_dict() if hasattr(host_object, 'to_mongo') else host_object.to_dict(),
-                "host_type": host_type
+                "host_type": detected_host_type,
+                "subject_id": str(subject.id) if subject else None,
+                "array_name": array_metadata.name,
+                "array_id": str(array_metadata.id)
             }
         except Exception as e:
             return {"success": False, "message": f"Error retrieving array: {e}"}
 
     @staticmethod
     def append_to_array(user_id, host_id, value, host_type=None, array_name=None, array_id=None):
-        """Append a value to the end of an array with smart host detection and name/ID support."""
+        """Append a value to the end of an array with smart host detection, subject-aware lookup and name/ID support."""
         try:
             # Get user by ID
             user = User.objects(id=user_id).first()
             if not user:
                 return {"success": False, "message": "User not found"}
 
-            # Get host object and type
-            host_object, detected_host_type = Arrays._get_host_object(host_id, host_type)
+            # Get host object, type, and subject
+            host_object, detected_host_type, subject = Arrays._get_host_object(host_id, host_type)
             if not host_object:
                 return {"success": False, "message": "Invalid host ID"}
 
-            # Get array metadata by name or ID
-            array_metadata = Arrays._get_array_metadata_by_name_or_id(user, host_id, detected_host_type, array_name, array_id)
+            # Get array metadata by name or ID with subject-aware lookup
+            array_metadata = Arrays._get_array_metadata_by_name_or_id(user, host_id, detected_host_type, array_name, array_id, subject)
             if not array_metadata:
                 identifier = f"ID '{array_id}'" if array_id else f"name '{array_name}'" if array_name else "default array"
-                return {"success": False, "message": f"Array with {identifier} not found for {detected_host_type} '{host_id}'"}
+                scope = "subject" if subject else "user"
+                return {"success": False, "message": f"Array with {identifier} not found for {detected_host_type} '{host_id}' in {scope}"}
                 
             # Check value size
             is_valid, error_msg = Arrays._check_value_size(value)
@@ -491,6 +582,7 @@ class Arrays:
                 "message": f"Value appended to array '{array_metadata.name}' for {detected_host_type} '{host_id}'",
                 "host_object": host_object.to_mongo().to_dict() if hasattr(host_object, 'to_mongo') else host_object.to_dict(),
                 "host_type": detected_host_type,
+                "subject_id": str(subject.id) if subject else None,
                 "array_name": array_metadata.name,
                 "array_id": str(array_metadata.id)
             }
@@ -498,23 +590,25 @@ class Arrays:
             return {"success": False, "message": f"Error appending to array: {e}"}
 
     @staticmethod
-    def delete_array(user_id, host_id, host_type=None):
-        """Delete an entire array with smart host detection."""
+    def delete_array(user_id, host_id, host_type=None, array_name=None, array_id=None):
+        """Delete an entire array with smart host detection and subject-aware lookup."""
         try:
             # Get user by ID
             user = User.objects(id=user_id).first()
             if not user:
                 return {"success": False, "message": "User not found"}
 
-            # Get host object and type
-            host_object, detected_host_type = Arrays._get_host_object(host_id, host_type)
+            # Get host object, type, and subject
+            host_object, detected_host_type, subject = Arrays._get_host_object(host_id, host_type)
             if not host_object:
                 return {"success": False, "message": "Invalid host ID"}
 
-            # Get array metadata
-            array_metadata = Arrays._get_array_metadata(user, host_id, detected_host_type)
+            # Get array metadata with subject-aware lookup
+            array_metadata = Arrays._get_array_metadata_by_name_or_id(user, host_id, detected_host_type, array_name, array_id, subject)
             if not array_metadata:
-                return {"success": False, "message": f"Array not found for {detected_host_type} '{host_id}'"}
+                identifier = f"ID '{array_id}'" if array_id else f"name '{array_name}'" if array_name else "default array"
+                scope = "subject" if subject else "user"
+                return {"success": False, "message": f"Array with {identifier} not found for {detected_host_type} '{host_id}' in {scope}"}
 
             # Count elements for reporting
             element_count = ArrayItem_db.objects(user=user, array_metadata=array_metadata).count()
@@ -527,10 +621,13 @@ class Arrays:
 
             return {
                 "success": True,
-                "message": f"Array for {detected_host_type} '{host_id}' deleted successfully",
+                "message": f"Array '{array_metadata.name}' for {detected_host_type} '{host_id}' deleted successfully",
                 "elements_deleted": element_count,
                 "host_object": host_object.to_mongo().to_dict() if hasattr(host_object, 'to_mongo') else host_object.to_dict(),
-                "host_type": detected_host_type
+                "host_type": detected_host_type,
+                "subject_id": str(subject.id) if subject else None,
+                "array_name": array_metadata.name,
+                "array_id": str(array_metadata.id)
             }
         except Exception as e:
             return {"success": False, "message": f"Error deleting array: {e}"}
@@ -758,19 +855,25 @@ class Arrays:
             return {"success": False, "message": f"Error removing at index: {e}"}
 
     @staticmethod
-    def search_in_array(user_id, component_id, value):
-        """Search for a value in the array and return its index(es)."""
+    def search_in_array(user_id, host_id, value, host_type=None, array_name=None, array_id=None):
+        """Search for a value in the array and return its index(es) with subject-aware lookup."""
         try:
             # Get user by ID
             user = User.objects(id=user_id).first()
             if not user:
                 return {"success": False, "message": "User not found"}
 
-            # Get array metadata
-            array_metadata = ArrayMetadata.objects(
-                user=user, host_component=str(component_id)).first()
+            # Get host object, type, and subject
+            host_object, detected_host_type, subject = Arrays._get_host_object(host_id, host_type)
+            if not host_object:
+                return {"success": False, "message": "Invalid host ID"}
+
+            # Get array metadata by name or ID with subject-aware lookup
+            array_metadata = Arrays._get_array_metadata_by_name_or_id(user, host_id, detected_host_type, array_name, array_id, subject)
             if not array_metadata:
-                return {"success": False, "message": f"Array '{component_id}' not found"}
+                identifier = f"ID '{array_id}'" if array_id else f"name '{array_name}'" if array_name else "default array"
+                scope = "subject" if subject else "user"
+                return {"success": False, "message": f"Array with {identifier} not found for {detected_host_type} '{host_id}' in {scope}"}
 
             # Find elements with the given value
             elements = ArrayItem_db.objects(
@@ -778,16 +881,29 @@ class Arrays:
 
             indices = [element.index for element in elements]
 
-            return {"success": True, "indices": indices}
+            return {
+                "success": True, 
+                "indices": indices,
+                "host_type": detected_host_type,
+                "subject_id": str(subject.id) if subject else None,
+                "array_name": array_metadata.name,
+                "array_id": str(array_metadata.id)
+            }
         except Exception as e:
             return {"success": False, "message": f"Error searching in array: {e}"}
 
     @staticmethod
-    def slice_array(user_id, component_id, start, end=None):
-        """Get a slice of the array."""
+    def slice_array(user_id, host_id, start, end=None, host_type=None, array_name=None, array_id=None):
+        """Get a slice of the array with subject-aware lookup."""
         try:
-            # Get the full array first - fixed the self reference
-            result = Arrays.get_array(user_id, component_id)
+            # Get the full array first using subject-aware method
+            result = Arrays.get_array_by_name(
+                user_id=user_id, 
+                host_id=host_id, 
+                array_name=array_name, 
+                array_id=array_id,
+                host_type=host_type
+            )
             if not result["success"]:
                 return result
 
@@ -804,7 +920,14 @@ class Arrays:
             # Get slice
             slice_result = current_array[start:end]
 
-            return {"success": True, "slice": slice_result}
+            return {
+                "success": True, 
+                "slice": slice_result,
+                "host_type": result["host_type"],
+                "subject_id": result.get("subject_id"),
+                "array_name": result["array_name"],
+                "array_id": result["array_id"]
+            }
         except Exception as e:
             return {"success": False, "message": f"Error slicing array: {e}"}
 

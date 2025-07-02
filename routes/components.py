@@ -111,7 +111,8 @@ async def delete_component(component_id: str, user_device: tuple = Depends(verif
             if component.comp_type in ["Array_type", "Array_generic", "Array_of_pairs"]:
                 array_metadata_result = Arrays.delete_array(
                     user_id=current_user.id,
-                    component_id=component_id
+                    host_id=component_id,
+                    host_type='component'
                 )
                 if not array_metadata_result["success"]:
                     raise HTTPException(status_code=500, detail=array_metadata_result["message"])

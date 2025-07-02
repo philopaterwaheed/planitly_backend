@@ -129,22 +129,13 @@ class Component:
 
     def alter_data(self, value):
         if self.comp_type in ["Array_type", "Array_generic", "Array_of_pairs"]:
-            # Use ArrayMetadata and Arrays for managing array data
-            array_metadata = ArrayMetadata.objects(host_component=self.id).first()
-            if not array_metadata:
-                array_metadata = ArrayMetadata(
-                    user=self.owner,
-                    name=f"{self.name}_array",
-                    host_component=self.id
-                )
-                array_metadata.save()
+            # Use ArrayMetadata and Arrays for managing array data with subject-aware context
+            # Clear existing array items (handles subject-aware deletion)
+            Arrays.delete_array(self.owner, self.id, host_type='component')
 
-            # Clear existing array items
-            Arrays.delete_array(self.owner, self.id)
-
-            # Add new array items
+            # Add new array items (create_array will handle subject-aware creation)
             if isinstance(value, list):
-                Arrays.create_array(self.owner, self.id, array_metadata.name, initial_elements=value)
+                Arrays.create_array(self.owner, self.id, f"{self.name}_array", host_type='component', initial_elements=value)
         elif self.comp_type == "pair":
             if isinstance(value, dict) and "key" in value and "value" in value:
                 self.data.update(value)

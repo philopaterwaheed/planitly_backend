@@ -114,12 +114,13 @@ class Subject:
 
             component.save()
 
-            # Handle Array_type and Array_generic components
+            # Handle Array_type and Array_generic components with subject-aware context
             if comp_type in ["Array_type", "Array_generic", "Array_of_pairs"]:
                 array_metadata_result = Arrays.create_array(
                     user_id=owner,
                     host_id=component_id,
                     array_name=name,
+                    host_type='component'
                 )
                 if not array_metadata_result["success"]:
                     return {
@@ -190,11 +191,11 @@ class Subject:
             return None
 
     async def _create_widget_arrays(self, widget, widget_type):
-        """Create array components for widgets that need them."""
+        """Create array components for widgets that need them with subject-aware context."""
         from .arrayItem import Arrays
         
         if widget_type == "table":
-            # Create columns array
+            # Create columns array with subject-aware context  
             columns_result = Arrays.create_array(
                 user_id=self.owner,
                 host_id=widget.id,
@@ -205,7 +206,7 @@ class Subject:
             if not columns_result["success"]:
                 raise Exception(f"Failed to create columns array: {columns_result['message']}")
             
-            # Create rows array
+            # Create rows array with subject-aware context
             rows_result = Arrays.create_array(
                 user_id=self.owner,
                 host_id=widget.id,
@@ -217,7 +218,7 @@ class Subject:
                 raise Exception(f"Failed to create rows array: {rows_result['message']}")
                 
         elif widget_type == "calendar":
-            # Create events array
+            # Create events array with subject-aware context
             events_result = Arrays.create_array(
                 user_id=self.owner,
                 host_id=widget.id,
@@ -229,7 +230,7 @@ class Subject:
                 raise Exception(f"Failed to create events array: {events_result['message']}")
                 
         elif widget_type == "note":
-            # Create tags array
+            # Create tags array with subject-aware context
             tags_result = Arrays.create_array(
                 user_id=self.owner,
                 host_id=widget.id,
@@ -404,24 +405,27 @@ class Subject:
                 # For other widget types, check if they have any arrays
                 # This handles custom arrays that might be created for widgets
                 try:
-                    from .arrayItem import ArrayMetadata
+                    from .arrayItem import ArrayMetadata, Arrays
+                    # Use subject-aware lookup for widget arrays
                     widget_arrays = ArrayMetadata.objects(
-                        user=self.owner,
+                        subject=self.id,
                         host_widget=widget_doc.id
                     )
                     
                     if widget_arrays:
                         widget_data["arrays"] = []
                         for array_meta in widget_arrays:
-                            array_result = Arrays.get_array_by_id(
+                            array_result = Arrays.get_array_by_name(
                                 user_id=self.owner,
-                                array_id=str(array_meta.id)
+                                host_id=widget_doc.id,
+                                array_name=array_meta.name,
+                                host_type="widget"
                             )
                             if array_result["success"]:
                                 widget_data["arrays"].append({
                                     "id": str(array_meta.id),
                                     "name": array_meta.name,
-                                    "data": array_result["data"]
+                                    "data": array_result["array"]
                             })
                 except Exception as array_error:
                     # Continue if array loading fails
